@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build:
+    name: Build installer & portable release
+    runs-on: windows-latest
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e .[dev]
+          pip install pyinstaller
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build executable, portable zip & installer
+        run: .\scripts\build_installer.ps1
+
+      - name: Locate build artifacts
+        id: artifacts
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path "dist" -Filter "TradeAudit-v*-win64-portable.zip" | Select-Object -First 1
+          $setup = Get-ChildItem -Path "dist\installer" -Filter "TradeAudit-Setup-v*.exe" | Select-Object -First 1
+          "zip_path=$($zip.FullName)" >> $env:GITHUB_OUTPUT
+          "setup_path=$($setup.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.artifacts.outputs.zip_path }}
+            ${{ steps.artifacts.outputs.setup_path }}
+          generate_release_notes: true
