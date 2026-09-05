@@ -89,6 +89,26 @@ class MT5HistoryReader:
             logger.error("mt5.history_deals_get returned None (code %s): %s", error_code, error_msg)
             raise MT5Error(f"MT5 history_deals_get failed (code {error_code}): {error_msg}")
 
+        # MT5 deals never carry SL/TP - only the order that generated the deal does.
+        # Bulk-fetch orders for the same window and join on order ticket so initial_sl
+        # can be resolved for the aggregator; entry deals with no matching order
+        # (e.g. deposits/balance ops, or an opening order outside this window on an
+        # incremental sync) fall back to a per-ticket lookup, then to 0.0/unknown.
+        order_sltp_map = {}
+        try:
+            raw_orders = mt5.history_orders_get(from_date, to_date)
+        except Exception as e:
+            logger.warning("Failed to fetch MT5 history orders for SL/TP join: %s", e)
+            raw_orders = None
+        if raw_orders:
+            for o in raw_orders:
+                o_dict = o._asdict() if hasattr(o, "_asdict") else {}
+                o_ticket = int(o_dict.get("ticket", getattr(o, "ticket", 0)))
+                order_sltp_map[o_ticket] = (
+                    float(o_dict.get("sl", getattr(o, "sl", 0.0))),
+                    float(o_dict.get("tp", getattr(o, "tp", 0.0))),
+                )
+
         trade_deals: List[TradeDeal] = []
         for d in raw_deals:
             deal_dict = d._asdict() if hasattr(d, "_asdict") else {}
@@ -113,8 +133,18 @@ class MT5HistoryReader:
             swap = float(deal_dict.get("swap", getattr(d, "swap", 0.0)))
             commission = float(deal_dict.get("commission", getattr(d, "commission", 0.0)))
             fee = float(deal_dict.get("fee", getattr(d, "fee", 0.0)))
-            sl = float(deal_dict.get("sl", getattr(d, "sl", 0.0)))
-            tp = float(deal_dict.get("tp", getattr(d, "tp", 0.0)))
+
+            sl, tp = order_sltp_map.get(order_ticket, (0.0, 0.0))
+            if order_ticket and order_ticket not in order_sltp_map:
+                try:
+                    single_order = mt5.history_orders_get(ticket=order_ticket)
+                except Exception:
+                    single_order = None
+                if single_order:
+                    od = single_order[0]._asdict() if hasattr(single_order[0], "_asdict") else {}
+                    sl = float(od.get("sl", getattr(single_order[0], "sl", 0.0)))
+                    tp = float(od.get("tp", getattr(single_order[0], "tp", 0.0)))
+
             comment = str(deal_dict.get("comment", getattr(d, "comment", "")))
             magic = int(deal_dict.get("magic", getattr(d, "magic", 0)))
 
