@@ -62,9 +62,15 @@ def get_default_database_url(data_dir: Path) -> str:
     custom_url = os.getenv("TRADEAUDIT_DATABASE_URL")
     if custom_url:
         return custom_url
-    
-    # In dev without subfolder, fallback to base DB if existing in root
-    if not is_frozen() and os.getenv("TRADEAUDIT_ENV", "development").lower() != "production":
+
+    # In dev without subfolder, fallback to base DB if existing in root.
+    # Skip this legacy fallback when TRADEAUDIT_DATA_DIR was explicitly set,
+    # otherwise it silently overrides the caller's chosen data directory.
+    if (
+        not is_frozen()
+        and not os.getenv("TRADEAUDIT_DATA_DIR")
+        and os.getenv("TRADEAUDIT_ENV", "development").lower() != "production"
+    ):
         root_db = BASE_DIR / "tradeaudit.db"
         if root_db.exists():
             return f"sqlite:///{root_db}"
