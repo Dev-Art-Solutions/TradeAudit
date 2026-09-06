@@ -23,6 +23,26 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+class JsApi:
+    """
+    Methods exposed to the frontend as window.pywebview.api.* - used for things a
+    web page can't do on its own, like opening a native "pick a file" dialog.
+    """
+
+    def __init__(self):
+        self.window: "webview.Window | None" = None
+
+    def browse_mt5_path(self):
+        """Open a native file picker for the MT5 terminal executable."""
+        if self.window is None:
+            return None
+        result = self.window.create_file_dialog(
+            webview.OPEN_DIALOG,
+            file_types=("Executable Files (*.exe)", "All files (*.*)"),
+        )
+        return result[0] if result else None
+
+
 class WebUIApplication:
     """Owns the FastAPI server thread and the pywebview window."""
 
@@ -43,15 +63,17 @@ class WebUIApplication:
         server_thread.start()
 
         icon_path = get_resource_path("resources/icons/tradeaudit.ico")
+        js_api = JsApi()
         window_kwargs = dict(
             title=f"{self.settings.app_name} v{self.settings.app_version}",
             url=f"http://127.0.0.1:{self.port}/",
             width=1400,
             height=900,
             min_size=(1000, 650),
+            js_api=js_api,
         )
 
-        webview.create_window(**window_kwargs)
+        js_api.window = webview.create_window(**window_kwargs)
         logger.info("Starting TradeAudit web UI on http://127.0.0.1:%s/", self.port)
         webview.start()
         return 0

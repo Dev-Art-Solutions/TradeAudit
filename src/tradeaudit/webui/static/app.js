@@ -317,6 +317,7 @@ async function viewSettings() {
         <label>MT5 Terminal Path <span class="text-dim">(optional \u2014 leave blank to use the last-used terminal)</span></label>
         <div class="input-row">
           <input type="text" id="f-path" placeholder="C:\\Program Files\\MetaTrader 5\\terminal64.exe" value="${esc(settings.mt5_path)}" />
+          <button type="button" class="btn" id="btn-browse-path">Browse\u2026</button>
         </div>
       </div>
       <div class="grid grid-2">
@@ -376,6 +377,19 @@ async function viewSettings() {
   document.getElementById("btn-save").addEventListener("click", async () => {
     try { await apiPost("/settings", readForm()); banner("\u2705 Settings saved successfully.", true); }
     catch (e) { banner("\u274C " + e.message, false); }
+  });
+
+  document.getElementById("btn-browse-path").addEventListener("click", async () => {
+    if (!(window.pywebview && window.pywebview.api)) {
+      banner("\u26A0\uFE0F File browsing only works inside the TradeAudit desktop app, not a plain browser tab.", false);
+      return;
+    }
+    try {
+      const path = await window.pywebview.api.browse_mt5_path();
+      if (path) document.getElementById("f-path").value = path;
+    } catch (e) {
+      banner("\u274C Could not open file picker: " + e.message, false);
+    }
   });
 
   document.getElementById("btn-connect").addEventListener("click", async () => {
