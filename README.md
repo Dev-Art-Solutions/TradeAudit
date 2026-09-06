@@ -88,11 +88,12 @@ real MT5 trade history.
 - OHLC candlestick charting across multiple timeframes (**M1**–**D1**).
 - **Execution Overlays:** Entry price, initial Stop Loss, and Take Profit rendered on the chart.
 - **Replay Engine:** Step-by-step bar replay with speed control (0.5x–4x) to re-live execution dynamics.
+- **Zoom & Pan:** Scroll to zoom into a cursor-centered window, drag to pan, one click to fit back to the full revealed range.
 
 ![Trade Chart Replay](docs/images/03-trade-chart-replay.png)
 
 ### 🎨 6. Chart Annotations, 1-Click Screenshots & Trade Review
-- **Drawing Tools:** Trendlines, horizontal rays, and text notes anchored to price and timestamp, persisted per trade/timeframe.
+- **Drawing Tools:** Trendlines, horizontal rays, rectangle zones, directional arrows, and text notes — anchored to price and timestamp, persisted per trade/timeframe.
 - **1-Click Screenshot Capture:** Chart snapshots saved directly to disk and attached to the trade's journal entry.
 - **Trade Review:** Pre-trade thesis, post-trade review, execution grading (A+ through F), and lessons learned.
 

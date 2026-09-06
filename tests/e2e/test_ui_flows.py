@@ -131,6 +131,49 @@ def test_trade_chart_replay_and_drawing(page, live_server, seeded_trade):
     assert annotation_count >= 1
 
 
+def test_trade_chart_zoom_pan_and_shape_tools(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#trade-chart")
+    page.wait_for_selector("#tc-trade", timeout=10000)
+    page.wait_for_timeout(1000)
+
+    canvas = page.locator("#tc-canvas")
+    box = canvas.bounding_box()
+    cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+
+    # Wheel-zoom must shrink the visible window below the full revealed range.
+    full_count = page.evaluate("TC.candles.length")
+    page.mouse.move(cx, cy)
+    page.mouse.wheel(0, -300)
+    page.wait_for_timeout(200)
+    zoomed_size = page.evaluate("TC.viewSize")
+    assert zoomed_size is not None and zoomed_size < full_count
+
+    # Drag-pan must move the viewport without reopening a draw click.
+    page.mouse.move(cx, cy)
+    page.mouse.down()
+    page.mouse.move(cx - 150, cy, steps=10)
+    page.mouse.up()
+    page.wait_for_timeout(200)
+    assert page.evaluate("TC.viewStart") > 0
+
+    # Fit resets both.
+    page.click("#tc-fit-zoom")
+    page.wait_for_timeout(200)
+    assert page.evaluate("TC.viewSize") is None
+    assert page.evaluate("TC.viewStart") == 0
+
+    # Rectangle zone (two clicks) and an arrow (one click) must both persist.
+    page.click('[data-draw="RECTANGLE_ZONE"]')
+    page.mouse.click(box["x"] + box["width"] * 0.3, box["y"] + box["height"] * 0.3)
+    page.mouse.click(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.6)
+    page.wait_for_timeout(300)
+    page.click('[data-draw="ARROW_UP"]')
+    page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] * 0.4)
+    page.wait_for_timeout(300)
+    assert page.evaluate("TC.annotations.length") == 2
+    assert page.evaluate("TC.annotations.map(a => a.annotation_type)") == ["RECTANGLE_ZONE", "ARROW_UP"]
+
+
 def test_trade_chart_journal_save(page, live_server, seeded_trade):
     page.goto(live_server["base_url"] + "/#trade-chart")
     page.wait_for_selector("#tj-setup", timeout=10000)

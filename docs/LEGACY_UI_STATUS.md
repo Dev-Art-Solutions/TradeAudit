@@ -30,19 +30,13 @@ a bug fixed once is fixed for both.
 - AI-ready Markdown report generation with clipboard copy
 - Quant & Risk (Monte Carlo, Risk of Ruin, rolling window stability)
 - Trade Chart: candlestick rendering, bar-by-bar replay with speed control,
-  trendline / horizontal ray / text note annotations, 1-click screenshot,
-  and a trade journal (setup name, grade, thesis, review, lessons learned)
+  all six annotation types (trendline, horizontal ray, rectangle zone,
+  arrow up/down, text note), scroll-to-zoom and drag-to-pan, 1-click
+  screenshot, and a trade journal (setup name, grade, thesis, review,
+  lessons learned)
 
 ## Qt-only (not yet ported to the web UI)
 
-- **Rectangle zone and arrow annotation types.** The domain model
-  (`AnnotationType`) and database schema support all six annotation types;
-  the web UI's drawing toolbar currently implements three (trendline,
-  horizontal ray, text note). Rectangle zones and directional arrows only
-  exist in the Qt `CandlestickChartWidget`.
-- **Interactive chart zoom/pan.** The Qt chart widget supports a `PAN` tool
-  and a "fit to view" zoom reset. The web chart currently renders a fixed
-  bar count with no zoom/pan gesture.
 - **Copy chart image to clipboard.** Qt's `ChartScreenshotService` can copy
   a `QWidget.grab()` directly to the OS clipboard in addition to saving a
   file. It's a `QObject`/Qt-widget API and doesn't apply as-is to a
@@ -71,15 +65,17 @@ a bug fixed once is fixed for both.
 
 ## Is removing Qt safe right now?
 
-**Not yet — recommend keeping it as documented legacy for now.** The
-rectangle/arrow annotation tools and chart zoom/pan are real, visible
-capability the web UI doesn't have. Removing the Qt UI today would be a
-net feature loss, not just a UI swap. Once those three gaps close (rectangle
-+ arrow annotation types, chart zoom/pan, and a decision on whether
-clipboard-image-copy is worth implementing for the browser canvas),
-`--legacy-qt` and `src/tradeaudit/ui/` can be removed along with
-`PySide6`/`pytest-qt` from the dependency list — nothing else in the
-codebase depends on Qt being present.
+**Close, but not quite — one real gap left.** Annotation tools and chart
+zoom/pan (the two gaps that used to block this) are now at parity. The
+remaining difference is clipboard-image-copy, which needs its own
+Clipboard-API-based implementation for the browser canvas rather than a
+port of Qt's `QWidget.grab()` path — a small, self-contained piece of
+work, not a redesign. Once that's decided (build it, or accept
+save-to-disk as the web UI's permanent equivalent) and an eraser-by-click
+gesture is added for individual annotations, `--legacy-qt` and
+`src/tradeaudit/ui/` can be removed along with `PySide6`/`pytest-qt` from
+the dependency list — nothing else in the codebase depends on Qt being
+present.
 
 ## Tests that only exist because of Qt
 

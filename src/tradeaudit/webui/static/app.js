@@ -803,17 +803,25 @@ function renderRollingTable(rolling) {
 
 // ------------------------------------------------------------------ trade chart
 
-// TC holds all Trade Chart tab state: loaded data, replay playback, and the
-// pixel<->price/time mapping from the last draw (needed for click-to-annotate).
+// TC holds all Trade Chart tab state: loaded data, replay playback, the
+// zoom/pan viewport into the revealed candles, and the pixel<->price/time
+// mapping from the last draw (needed for click-to-annotate).
 const TC = {
   tradeId: null, candles: [], overlay: null, annotations: [],
   visibleCount: 0, playing: false, timer: null, speed: 1,
   drawMode: null, pendingPoint: null, geom: null,
+  viewStart: 0, viewSize: null, // null viewSize = show the whole revealed range (no zoom)
+  dragging: false, dragStartX: 0, dragStartViewStart: 0, suppressNextClick: false,
 };
+
+const MIN_ZOOM_CANDLES = 8;
 
 const DRAW_TOOLS = [
   { type: "TREND_LINE", label: "\u{1F4C8} Trendline" },
   { type: "HORIZONTAL_RAY", label: "\u2796 H-Ray" },
+  { type: "RECTANGLE_ZONE", label: "\u25ad Zone" },
+  { type: "ARROW_UP", label: "\u2b06\ufe0f Arrow Up" },
+  { type: "ARROW_DOWN", label: "\u2b07\ufe0f Arrow Down" },
   { type: "TEXT_NOTE", label: "\u{1F4DD} Note" },
 ];
 
@@ -848,12 +856,14 @@ async function viewTradeChart() {
         <div class="right">
           ${DRAW_TOOLS.map((t) => `<button class="btn" data-draw="${t.type}">${t.label}</button>`).join("")}
           <button class="btn btn-danger" id="tc-clear-annotations">Clear Drawings</button>
+          <button class="btn" id="tc-fit-zoom" title="Reset zoom/pan to show the whole revealed range">\u{1F50D} Fit</button>
           <button class="btn" id="tc-screenshot">\u{1F4F7} Screenshot</button>
         </div>
       </div>
 
       <canvas id="tc-canvas" style="width:100%;height:420px;display:block;cursor:crosshair"></canvas>
       <div id="tc-overlay" class="kpi-sub" style="margin-top:12px"></div>
+      <div class="kpi-sub text-dim" style="margin-top:4px">Scroll to zoom · drag to pan the chart.</div>
       <div id="tc-drawhint" class="kpi-sub text-dim" style="margin-top:4px"></div>
     </div>
 
@@ -885,8 +895,15 @@ async function viewTradeChart() {
   document.getElementById("tc-speed").addEventListener("change", (e) => { TC.speed = parseFloat(e.target.value); if (TC.playing) { stopReplayTimer(); startReplayTimer(); } });
   document.querySelectorAll("[data-draw]").forEach((b) => b.addEventListener("click", () => setDrawMode(b.dataset.draw)));
   document.getElementById("tc-clear-annotations").addEventListener("click", clearAnnotations);
+  document.getElementById("tc-fit-zoom").addEventListener("click", fitZoom);
   document.getElementById("tc-screenshot").addEventListener("click", takeScreenshot);
-  document.getElementById("tc-canvas").addEventListener("click", onCanvasClick);
+
+  const canvas = document.getElementById("tc-canvas");
+  canvas.addEventListener("mousedown", onCanvasMouseDown);
+  canvas.addEventListener("mousemove", onCanvasMouseMove);
+  window.addEventListener("mouseup", onCanvasMouseUp);
+  canvas.addEventListener("click", onCanvasClick);
+  canvas.addEventListener("wheel", onCanvasWheel, { passive: false });
   document.getElementById("tj-save").addEventListener("click", saveJournalEntry);
 
   await loadTradeChart();
@@ -905,6 +922,8 @@ async function loadTradeChart() {
   TC.candles = data.candles || [];
   TC.overlay = data.overlay;
   TC.visibleCount = TC.candles.length; // show the full chart by default; Reset scrubs back for replay
+  TC.viewStart = 0;
+  TC.viewSize = null; // fresh trade/timeframe always loads fully zoomed out
   document.getElementById("tc-play").innerHTML = "\u25b6 Play";
   TC.playing = false;
 
@@ -924,13 +943,73 @@ async function loadTradeChart() {
     ? `${note.screenshot_paths.length} screenshot(s) saved to disk.` : "No screenshots saved yet.";
 }
 
+function getViewSize(revealedLen) {
+  return TC.viewSize || revealedLen;
+}
+function clampViewStart(revealedLen, viewSize) {
+  TC.viewStart = Math.max(0, Math.min(TC.viewStart, Math.max(0, revealedLen - viewSize)));
+}
+function fitZoom() {
+  TC.viewStart = 0;
+  TC.viewSize = null;
+  renderTradeChart();
+}
+
 function renderTradeChart() {
   const o = TC.overlay;
   document.getElementById("tc-overlay").innerHTML =
     `Entry ${fmtNum(o.entry_price, 5)} \u00b7 Exit ${o.exit_price !== null ? fmtNum(o.exit_price, 5) : "\u2014"} \u00b7 ` +
     `SL ${o.initial_sl !== null ? fmtNum(o.initial_sl, 5) : "\u2014"} \u00b7 TP ${o.initial_tp !== null ? fmtNum(o.initial_tp, 5) : "\u2014"} \u00b7 ` +
     `R: ${o.realized_r !== null ? fmtNum(o.realized_r, 2) : "unknown"} \u00b7 Bar ${TC.visibleCount}/${TC.candles.length}`;
-  drawCandles(document.getElementById("tc-canvas"), TC.candles.slice(0, TC.visibleCount), TC.overlay, TC.annotations);
+
+  const revealed = TC.candles.slice(0, TC.visibleCount);
+  const viewSize = getViewSize(revealed.length);
+  clampViewStart(revealed.length, viewSize);
+  const visible = revealed.slice(TC.viewStart, TC.viewStart + viewSize);
+  drawCandles(document.getElementById("tc-canvas"), visible, TC.overlay, TC.annotations);
+}
+
+// ------------------------------------------------------------- zoom & pan
+
+function onCanvasWheel(evt) {
+  if (!TC.geom || !TC.candles.length) return;
+  evt.preventDefault();
+  const revealed = TC.candles.slice(0, TC.visibleCount);
+  const oldViewSize = getViewSize(revealed.length);
+  const rect = evt.target.getBoundingClientRect();
+  const cursorX = evt.clientX - rect.left;
+  const cursorIndexAbs = TC.viewStart + cursorX / TC.geom.cw;
+  const factor = evt.deltaY < 0 ? 0.85 : 1 / 0.85; // scroll up = zoom in
+  let newViewSize = Math.round(oldViewSize * factor);
+  newViewSize = Math.max(MIN_ZOOM_CANDLES, Math.min(revealed.length, newViewSize));
+  const cursorRatio = cursorX / (rect.width || 1);
+  TC.viewSize = newViewSize >= revealed.length ? null : newViewSize;
+  TC.viewStart = Math.round(cursorIndexAbs - cursorRatio * newViewSize);
+  renderTradeChart();
+}
+
+function onCanvasMouseDown(evt) {
+  if (TC.drawMode) return; // drawing takes priority over panning
+  TC.dragging = true;
+  TC.dragMoved = false;
+  TC.dragStartX = evt.clientX;
+  TC.dragStartViewStart = TC.viewStart;
+}
+
+function onCanvasMouseMove(evt) {
+  if (!TC.dragging || !TC.geom) return;
+  const dx = evt.clientX - TC.dragStartX;
+  if (Math.abs(dx) > 3) TC.dragMoved = true;
+  const revealed = TC.candles.slice(0, TC.visibleCount);
+  const viewSize = getViewSize(revealed.length);
+  TC.viewStart = TC.dragStartViewStart + Math.round(-dx / TC.geom.cw);
+  clampViewStart(revealed.length, viewSize);
+  renderTradeChart();
+}
+
+function onCanvasMouseUp() {
+  if (TC.dragging && TC.dragMoved) TC.suppressNextClick = true;
+  TC.dragging = false;
 }
 
 // ------------------------------------------------------------- replay controls
@@ -969,35 +1048,40 @@ function stepReplay(delta) {
 
 // ------------------------------------------------------------- drawing tools
 
+const ONE_CLICK_TOOLS = new Set(["TEXT_NOTE", "HORIZONTAL_RAY", "ARROW_UP", "ARROW_DOWN"]);
+
 function setDrawMode(type) {
   TC.drawMode = (TC.drawMode === type) ? null : type;
   TC.pendingPoint = null;
   document.querySelectorAll("[data-draw]").forEach((b) => b.classList.toggle("btn-primary", b.dataset.draw === TC.drawMode));
   const hint = document.getElementById("tc-drawhint");
   if (!TC.drawMode) { hint.textContent = ""; return; }
-  hint.textContent = TC.drawMode === "TEXT_NOTE"
-    ? "Click on the chart to place a note."
+  hint.textContent = ONE_CLICK_TOOLS.has(TC.drawMode)
+    ? "Click on the chart to place it."
     : "Click two points on the chart to draw.";
 }
 
 async function onCanvasClick(evt) {
+  if (TC.suppressNextClick) { TC.suppressNextClick = false; return; }
   if (!TC.drawMode || !TC.geom) return;
   const rect = evt.target.getBoundingClientRect();
   const x = evt.clientX - rect.left, y = evt.clientY - rect.top;
   const point = { time: TC.geom.timeAt(x), price: TC.geom.priceAt(y) };
 
-  if (TC.drawMode === "TEXT_NOTE") {
-    const text = prompt("Note text:");
-    if (text) await postAnnotation({ annotation_type: "TEXT_NOTE", p1_time: point.time, p1_price: point.price, p2_time: point.time, p2_price: point.price, text });
+  if (ONE_CLICK_TOOLS.has(TC.drawMode)) {
+    if (TC.drawMode === "TEXT_NOTE") {
+      const text = prompt("Note text:");
+      if (!text) return;
+      await postAnnotation({ annotation_type: "TEXT_NOTE", p1_time: point.time, p1_price: point.price, p2_time: point.time, p2_price: point.price, text });
+      return;
+    }
+    await postAnnotation({ annotation_type: TC.drawMode, p1_time: point.time, p1_price: point.price, p2_time: point.time, p2_price: point.price });
     return;
   }
-  if (TC.drawMode === "HORIZONTAL_RAY") {
-    await postAnnotation({ annotation_type: "HORIZONTAL_RAY", p1_time: point.time, p1_price: point.price, p2_time: point.time, p2_price: point.price });
-    return;
-  }
-  // TREND_LINE: two clicks
+
+  // Two-click tools: TREND_LINE, RECTANGLE_ZONE
   if (!TC.pendingPoint) { TC.pendingPoint = point; return; }
-  await postAnnotation({ annotation_type: "TREND_LINE", p1_time: TC.pendingPoint.time, p1_price: TC.pendingPoint.price, p2_time: point.time, p2_price: point.price });
+  await postAnnotation({ annotation_type: TC.drawMode, p1_time: TC.pendingPoint.time, p1_price: TC.pendingPoint.price, p2_time: point.time, p2_price: point.price });
   TC.pendingPoint = null;
 }
 
@@ -1079,7 +1163,7 @@ function drawCandles(canvas, candles, overlay, annotations) {
     const idx = Math.max(0, Math.min(candles.length - 1, Math.floor(px / cw)));
     return candles[idx].timestamp;
   };
-  TC.geom = { priceAt, timeAt };
+  TC.geom = { priceAt, timeAt, cw };
 
   candles.forEach((c, i) => {
     const x = i * cw + cw / 2;
@@ -1122,6 +1206,26 @@ function drawCandles(canvas, candles, overlay, annotations) {
       ctx.moveTo(xAt(a.p1_time), yy);
       ctx.lineTo(w, yy);
       ctx.stroke();
+    } else if (a.annotation_type === "RECTANGLE_ZONE") {
+      const x1 = xAt(a.p1_time), x2 = xAt(a.p2_time);
+      const y1 = y(a.p1_price), y2 = y(a.p2_price);
+      const rx = Math.min(x1, x2), ry = Math.min(y1, y2);
+      const rw = Math.abs(x2 - x1) || cw, rh = Math.abs(y2 - y1) || 1;
+      ctx.globalAlpha = 0.15;
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.globalAlpha = 1;
+      ctx.strokeRect(rx, ry, rw, rh);
+    } else if (a.annotation_type === "ARROW_UP" || a.annotation_type === "ARROW_DOWN") {
+      const ax = xAt(a.p1_time), ay = y(a.p1_price);
+      const dir = a.annotation_type === "ARROW_UP" ? -1 : 1;
+      const size = 10;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(ax - size * 0.6, ay - dir * size);
+      ctx.lineTo(ax + size * 0.6, ay - dir * size);
+      ctx.closePath();
+      ctx.fill();
+      if (a.text) ctx.fillText(a.text, ax + size, ay - dir * size);
     } else if (a.annotation_type === "TEXT_NOTE") {
       ctx.fillText(a.text || "\u{1F4CC}", xAt(a.p1_time), y(a.p1_price));
     }
