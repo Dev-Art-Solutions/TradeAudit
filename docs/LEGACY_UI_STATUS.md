@@ -32,19 +32,11 @@ a bug fixed once is fixed for both.
 - Trade Chart: candlestick rendering, bar-by-bar replay with speed control,
   all six annotation types (trendline, horizontal ray, rectangle zone,
   arrow up/down, text note), scroll-to-zoom and drag-to-pan, 1-click
-  screenshot, and a trade journal (setup name, grade, thesis, review,
-  lessons learned)
+  screenshot with a separate "Copy Image" to clipboard, and a trade
+  journal (setup name, grade, thesis, review, lessons learned)
 
 ## Qt-only (not yet ported to the web UI)
 
-- **Copy chart image to clipboard.** Qt's `ChartScreenshotService` can copy
-  a `QWidget.grab()` directly to the OS clipboard in addition to saving a
-  file. It's a `QObject`/Qt-widget API and doesn't apply as-is to a
-  browser-rendered `<canvas>` — the web UI's screenshot button only saves
-  to disk (`%LOCALAPPDATA%/TradeAudit/screenshots/`, or `screenshots/` in
-  dev) via `canvas.toDataURL()`. A clipboard-write from the web UI would
-  need a separate implementation (e.g. the Clipboard API's `ClipboardItem`
-  for images), not a reuse of the Qt path.
 - **Eraser tool** for removing a single annotation by clicking it directly
   on the chart. The web UI only offers "Clear Drawings" (clears every
   annotation for the loaded trade/timeframe at once) plus per-annotation
@@ -65,17 +57,16 @@ a bug fixed once is fixed for both.
 
 ## Is removing Qt safe right now?
 
-**Close, but not quite — one real gap left.** Annotation tools and chart
-zoom/pan (the two gaps that used to block this) are now at parity. The
-remaining difference is clipboard-image-copy, which needs its own
-Clipboard-API-based implementation for the browser canvas rather than a
-port of Qt's `QWidget.grab()` path — a small, self-contained piece of
-work, not a redesign. Once that's decided (build it, or accept
-save-to-disk as the web UI's permanent equivalent) and an eraser-by-click
-gesture is added for individual annotations, `--legacy-qt` and
-`src/tradeaudit/ui/` can be removed along with `PySide6`/`pytest-qt` from
-the dependency list — nothing else in the codebase depends on Qt being
-present.
+**One small gap left.** Annotation tools, chart zoom/pan, and
+clipboard-image-copy (via the Clipboard API's `ClipboardItem`, verified
+with a real clipboard read-back in `tests/e2e/test_ui_flows.py`, not just
+"no error thrown") are all now at parity. The one remaining difference is
+an eraser-by-click gesture for removing a single annotation directly on
+the chart (today: "Clear Drawings" wipes everything, or a per-annotation
+delete via the API with no UI gesture bound to it). Once that closes,
+`--legacy-qt` and `src/tradeaudit/ui/` can be removed along with
+`PySide6`/`pytest-qt` from the dependency list — nothing else in the
+codebase depends on Qt being present.
 
 ## Tests that only exist because of Qt
 

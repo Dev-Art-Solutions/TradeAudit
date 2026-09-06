@@ -858,6 +858,7 @@ async function viewTradeChart() {
           <button class="btn btn-danger" id="tc-clear-annotations">Clear Drawings</button>
           <button class="btn" id="tc-fit-zoom" title="Reset zoom/pan to show the whole revealed range">\u{1F50D} Fit</button>
           <button class="btn" id="tc-screenshot">\u{1F4F7} Screenshot</button>
+          <button class="btn" id="tc-copy-clipboard">\u{1F4CB} Copy Image</button>
         </div>
       </div>
 
@@ -897,6 +898,7 @@ async function viewTradeChart() {
   document.getElementById("tc-clear-annotations").addEventListener("click", clearAnnotations);
   document.getElementById("tc-fit-zoom").addEventListener("click", fitZoom);
   document.getElementById("tc-screenshot").addEventListener("click", takeScreenshot);
+  document.getElementById("tc-copy-clipboard").addEventListener("click", copyChartToClipboard);
 
   const canvas = document.getElementById("tc-canvas");
   canvas.addEventListener("mousedown", onCanvasMouseDown);
@@ -1111,6 +1113,27 @@ async function takeScreenshot() {
     document.getElementById("tj-screenshots").textContent = `${res.note.screenshot_paths.length} screenshot(s) saved to disk.`;
     showTransientBanner("Screenshot saved to " + res.path, true);
   } catch (e) { showTransientBanner(e.message, false); }
+}
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not encode chart image."))), "image/png");
+  });
+}
+
+async function copyChartToClipboard() {
+  const canvas = document.getElementById("tc-canvas");
+  if (!navigator.clipboard || !window.ClipboardItem) {
+    showTransientBanner("Clipboard image copy isn't supported in this environment.", false);
+    return;
+  }
+  try {
+    const blob = await canvasToBlob(canvas);
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+    showTransientBanner("✅ Chart image copied to clipboard!", true);
+  } catch (e) {
+    showTransientBanner("Could not copy chart image: " + e.message, false);
+  }
 }
 
 async function saveJournalEntry() {

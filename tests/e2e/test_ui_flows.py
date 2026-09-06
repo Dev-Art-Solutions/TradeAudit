@@ -174,6 +174,34 @@ def test_trade_chart_zoom_pan_and_shape_tools(page, live_server, seeded_trade):
     assert page.evaluate("TC.annotations.map(a => a.annotation_type)") == ["RECTANGLE_ZONE", "ARROW_UP"]
 
 
+def test_trade_chart_copy_image_to_clipboard(page, live_server, seeded_trade):
+    """
+    The one remaining Qt-only gap in docs/LEGACY_UI_STATUS.md when this test
+    was written: Qt's ChartScreenshotService can copy a QWidget.grab() to the
+    OS clipboard, which doesn't apply to a browser <canvas>. This verifies a
+    real image actually lands in the clipboard - not just that the button
+    didn't throw.
+    """
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    page.goto(live_server["base_url"] + "/#trade-chart")
+    page.wait_for_selector("#tc-copy-clipboard", timeout=10000)
+    page.wait_for_timeout(1000)
+
+    page.click("#tc-copy-clipboard")
+    page.wait_for_timeout(500)
+
+    result = page.evaluate("""
+        async () => {
+            const items = await navigator.clipboard.read();
+            if (!items.length || !items[0].types.includes('image/png')) return { ok: false };
+            const blob = await items[0].getType('image/png');
+            return { ok: true, size: blob.size };
+        }
+    """)
+    assert result["ok"] is True
+    assert result["size"] > 0
+
+
 def test_trade_chart_journal_save(page, live_server, seeded_trade):
     page.goto(live_server["base_url"] + "/#trade-chart")
     page.wait_for_selector("#tj-setup", timeout=10000)
