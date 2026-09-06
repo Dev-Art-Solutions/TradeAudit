@@ -260,6 +260,16 @@ decisions.
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
+## Dev Art Solutions Trading Systems
+
+Part of the Dev Art Solutions trading systems portfolio:
+
+- TradeAudit — post-trade analytics and behavioral intelligence
+- [MT5 RiskGuard](https://github.com/Dev-Art-Solutions/RiskGuard) — native MQL5 risk controls
+- [MT5 Execution Bridge](https://github.com/Dev-Art-Solutions/MT5-Execution-Bridge) — local-first Python ↔ MT5 execution infrastructure
+
+https://trading.devart.solutions
+
 ---
 
 Built by **[Dev Art Solutions](https://devart.solutions)** — Trading Systems Engineering
