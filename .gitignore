@@ -75,6 +75,9 @@ backups/
 exports/
 screenshots/
 
+# Internal AI-agent planning doc - not part of the public repo
+plans/TRADEAUDIT_PORTFOLIO_PLAN_CLAUDE_CODE.md
+
 # IDE & Editors
 .vscode/
 .idea/

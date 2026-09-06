@@ -32,8 +32,9 @@ if (-not (Test-Path "dist\TradeAudit\TradeAudit.exe")) {
 }
 Write-Host "[SUCCESS] PyInstaller build verified at dist\TradeAudit\TradeAudit.exe" -ForegroundColor Green
 
-# Read version from pyproject.toml or src/tradeaudit/__init__.py
-$version = "0.1.0"
+# Read version from src/tradeaudit/__init__.py - the single source of truth
+# also used at runtime (Settings.app_version) and in pyproject.toml.
+$version = "1.0.0"
 if (Test-Path "src\tradeaudit\__init__.py") {
     $content = Get-Content "src\tradeaudit\__init__.py" -Raw
     if ($content -match '__version__\s*=\s*"([^"]+)"') {
@@ -78,7 +79,7 @@ foreach ($candidate in $isccCandidates) {
 
 if ($isccPath) {
     Write-Host "Found Inno Setup Compiler at: $isccPath" -ForegroundColor Cyan
-    & $isccPath "installer\TradeAudit.iss"
+    & $isccPath "/DMyAppVersion=$version" "installer\TradeAudit.iss"
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Inno Setup compilation failed!" -ForegroundColor Red
         exit 1

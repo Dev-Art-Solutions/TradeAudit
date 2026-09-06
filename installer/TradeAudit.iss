@@ -2,10 +2,16 @@
 ; Generated for TradeAudit Windows Desktop Application
 
 #define MyAppName "TradeAudit"
-#define MyAppVersion "0.1.0"
-#define MyAppPublisher "TradeAudit Team"
+; MyAppVersion is normally passed in via `ISCC /DMyAppVersion=X.Y.Z` from
+; scripts\build_installer.ps1, which reads the single source of truth at
+; src\tradeaudit\__init__.py's __version__. This fallback only applies when
+; compiling the .iss directly (e.g. from the Inno Setup IDE).
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.0"
+#endif
+#define MyAppPublisher "Dev Art Solutions"
 #define MyAppExeName "TradeAudit.exe"
-#define MyAppURL "https://github.com/iovigi/TradeAudit"
+#define MyAppURL "https://github.com/Dev-Art-Solutions/TradeAudit"
 
 [Setup]
 ; Unique AppId to prevent duplicate installations

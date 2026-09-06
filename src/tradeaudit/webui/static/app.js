@@ -730,16 +730,29 @@ async function pollLiveJournal() {
 
 async function viewReports() {
   content().innerHTML = `
-    <div class="toolbar"><div></div><div class="right"><button class="btn btn-primary" id="btn-gen-report">Generate Report</button></div></div>
+    <div class="toolbar"><div></div><div class="right">
+      <button class="btn" id="btn-copy-report" style="display:none">\u{1F4CB} Copy to Clipboard</button>
+      <button class="btn btn-primary" id="btn-gen-report">Generate Report</button>
+    </div></div>
     <div class="card"><div class="markdown-box" id="report-box">Click "Generate Report" to build a Markdown / AI-ready audit dossier from your synced trades.</div></div>
   `;
   document.getElementById("btn-gen-report").addEventListener("click", async () => {
     document.getElementById("report-box").textContent = "Generating\u2026";
+    document.getElementById("btn-copy-report").style.display = "none";
     try {
       const res = await apiGet("/report");
       document.getElementById("report-box").textContent = res.markdown;
+      document.getElementById("btn-copy-report").style.display = "inline-flex";
     } catch (e) {
       document.getElementById("report-box").textContent = "Error: " + e.message;
+    }
+  });
+  document.getElementById("btn-copy-report").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(document.getElementById("report-box").textContent);
+      showTransientBanner("\u{1F4CB} Copied to clipboard! Ready to paste into ChatGPT.", true);
+    } catch (e) {
+      showTransientBanner("Could not copy automatically - select the text manually.", false);
     }
   });
 }

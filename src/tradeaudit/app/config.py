@@ -16,6 +16,7 @@ try:
 except ImportError:
     HAS_PYDANTIC = False
 
+from tradeaudit import __version__ as APP_VERSION
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -82,7 +83,7 @@ def get_default_database_url(data_dir: Path) -> str:
 if HAS_PYDANTIC:
     class Settings(BaseSettings):
         app_name: str = "TradeAudit"
-        app_version: str = "1.0.0"
+        app_version: str = APP_VERSION
         env: str = "development"
         debug: bool = True
 
@@ -142,7 +143,7 @@ else:
     @dataclass
     class Settings:
         app_name: str = "TradeAudit"
-        app_version: str = "1.0.0"
+        app_version: str = APP_VERSION
         env: str = os.getenv("TRADEAUDIT_ENV", "development")
         debug: bool = os.getenv("TRADEAUDIT_DEBUG", "True").lower() in ("true", "1")
 

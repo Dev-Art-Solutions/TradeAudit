@@ -26,8 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install -e .[dev]
-          pip install pyinstaller
+          pip install -e .[dev,build]
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y

@@ -7,12 +7,13 @@ TradeAudit is a desktop trading intelligence platform for **MetaTrader 5 (MT5)**
 ## 🛠️ Technology Stack
 
 - **Language & Runtime:** Python 3.11+ (Windows x64 primary target)
-- **GUI Framework:** PySide6 (Qt 6.x) with custom dark mode theme (`#0d1117`, `#161b22`, `#1f2937`)
-- **Database & ORM:** SQLite 3 with SQLAlchemy 2.x
+- **UI (default):** FastAPI local backend (127.0.0.1, token-authenticated) serving an HTML/CSS/JS frontend hosted inside a native `pywebview` window - same dark theme (`#0d1117`, `#161b22`, `#1f2937`)
+- **UI (legacy):** PySide6 (Qt 6.x), still available via `python -m tradeaudit --legacy-qt` - see `docs/LEGACY_UI_STATUS.md` for current parity
+- **Database & ORM:** SQLite 3 with SQLAlchemy 2.x (WAL mode, foreign keys enforced)
 - **Broker & Market Integration:** MetaTrader5 Python SDK (with synthetic offline fallbacks for testing/demo)
 - **Security & Credentials:** Python `keyring` backed by Windows Credential Locker
-- **Distribution & Packaging:** PyInstaller (`TradeAudit.spec`), Inno Setup (`installer/TradeAudit.iss`), PowerShell build automation
-- **Testing:** `pytest`, `pytest-qt`, `unittest.mock`
+- **Distribution & Packaging:** PyInstaller (`TradeAudit.spec`), Inno Setup (`installer/TradeAudit.iss`), one-command `build.bat`, GitHub Actions CI + tag-triggered release workflow
+- **Testing:** `pytest` (unit), Playwright + `pytest-playwright` (browser end-to-end against the real web UI), `pytest-qt` (legacy Qt UI only)
 
 ---
 
@@ -74,7 +75,13 @@ TradeAudit/
 │   │   └── security/            # Secure credential store using system keyring
 │   │       └── credential_store.py
 │   │
-│   └── ui/                      # PySide6 Presentation Layer
+│   ├── webui/                    # Default UI: FastAPI backend + HTML/CSS/JS frontend
+│   │   ├── server.py             # create_app(): all /api/* routes, token-auth middleware
+│   │   ├── context.py            # AppContext: wires every service, shared by all routes
+│   │   ├── launcher.py           # WebUIApplication: uvicorn thread + pywebview window + JsApi (native file dialog)
+│   │   └── static/                # index.html / app.js / styles.css (vanilla JS SPA, no build step)
+│   │
+│   └── ui/                      # Legacy PySide6 Presentation Layer (--legacy-qt)
 │       ├── main_window.py       # Main application shell and tab coordination
 │       ├── dialogs/             # Modal dialogs (TradeChartDialog, StrategyDialog, etc.)
 │       ├── views/               # Major tab views:
@@ -96,8 +103,9 @@ TradeAudit/
 │           ├── filter_bar.py
 │           └── kpi_card.py
 │
-└── tests/                       # Unit and integration test suite
-    └── unit/                    # 150+ tests covering all application modules
+└── tests/
+    ├── unit/                     # 185 tests covering domain/services/infrastructure/webui/legacy-Qt
+    └── e2e/                      # Playwright-driven browser tests against the real web UI
 ```
 
 ---
