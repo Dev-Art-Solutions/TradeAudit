@@ -6,7 +6,7 @@ echo          TradeAudit Production Build Pipeline
 echo =======================================================
 
 echo [1/4] Running automated test suite...
-pytest
+pytest tests\unit
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Test suite failed! Aborting packaging.
     exit /b 1

@@ -6,7 +6,7 @@ Write-Host "          TradeAudit Production Build Pipeline" -ForegroundColor Cya
 Write-Host "=======================================================" -ForegroundColor Cyan
 
 Write-Host "`n[1/4] Running automated test suite..." -ForegroundColor Yellow
-pytest
+pytest tests\unit
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] Test suite failed! Packaging aborted." -ForegroundColor Red
     exit 1

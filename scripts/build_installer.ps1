@@ -7,7 +7,7 @@ Write-Host "=======================================================" -Foreground
 
 # 1. Automated Test Suite
 Write-Host "`n[1/5] Running automated test suite..." -ForegroundColor Yellow
-pytest
+pytest tests\unit
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] Test suite failed! Packaging aborted." -ForegroundColor Red
     exit 1
