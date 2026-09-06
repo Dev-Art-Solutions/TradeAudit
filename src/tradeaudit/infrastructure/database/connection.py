@@ -4,7 +4,7 @@ Database connection manager and session factory using SQLAlchemy.
 
 import logging
 from typing import Generator
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, event
 from sqlalchemy.orm import sessionmaker, Session
 
 from tradeaudit.app.config import Settings
@@ -32,6 +32,18 @@ class DatabaseManager:
                 connect_args=connect_args,
                 echo=self.settings.debug
             )
+            if self.database_url.startswith("sqlite"):
+                # The comment above claimed these were already on - they weren't.
+                # WAL matters now that the web UI's uvicorn server can genuinely
+                # serve concurrent requests (unlike the old single-threaded Qt UI),
+                # and foreign_keys=ON makes SQLite actually enforce the ON DELETE
+                # CASCADE/SET NULL constraints declared in models.py.
+                @event.listens_for(self.engine, "connect")
+                def _set_sqlite_pragmas(dbapi_connection, connection_record):
+                    cursor = dbapi_connection.cursor()
+                    cursor.execute("PRAGMA journal_mode=WAL")
+                    cursor.execute("PRAGMA foreign_keys=ON")
+                    cursor.close()
             self.SessionLocal = sessionmaker(
                 autocommit=False,
                 autoflush=False,

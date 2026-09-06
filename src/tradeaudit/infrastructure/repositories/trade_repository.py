@@ -29,6 +29,22 @@ class TradeRepository:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
 
+    @staticmethod
+    def _ensure_account_stub(session, account_id: int) -> None:
+        """
+        Guarantee an accounts row exists before inserting anything that
+        references it. save_account() (with full MT5AccountInfo) only runs
+        when a live connection's account_info was actually fetched - with
+        SQLite foreign_keys enforcement on, a sync where that fetch is
+        skipped/fails would otherwise reject every trade/deal insert outright.
+        A stub row here is later overwritten with real details by
+        save_account() whenever account_info does become available.
+        """
+        exists = session.query(AccountModel.id).filter(AccountModel.id == account_id).first()
+        if not exists:
+            session.add(AccountModel(id=account_id))
+            session.flush()
+
     def save_account(self, account_info: MT5AccountInfo) -> None:
         """Insert or update account record in database."""
         with self.db_manager.session_scope() as session:
@@ -59,6 +75,9 @@ class TradeRepository:
 
         inserted_count = 0
         with self.db_manager.session_scope() as session:
+            for account_id in {d.account_id for d in deals}:
+                self._ensure_account_stub(session, account_id)
+
             existing_tickets = {
                 row[0] for row in session.query(TradeDealModel.ticket).filter(
                     TradeDealModel.ticket.in_([d.ticket for d in deals])
@@ -109,6 +128,8 @@ class TradeRepository:
 
         saved_trades: List[Trade] = []
         with self.db_manager.session_scope() as session:
+            self._ensure_account_stub(session, account_id)
+
             for trade in trades:
                 # Query existing trade by position_id and account_id
                 trade_model = session.query(TradeModel).filter(

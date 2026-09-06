@@ -3,11 +3,12 @@ FastAPI backend for the TradeAudit web UI. Wraps the existing, already-tested
 service/domain/infrastructure layers - no business logic lives here.
 """
 import logging
+import secrets
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -55,9 +56,26 @@ class AssignStrategyPayload(BaseModel):
     strategy_id: Optional[int] = None
 
 
-def create_app(ctx: AppContext) -> FastAPI:
+def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
     app = FastAPI(title="TradeAudit API")
     quant_cache: dict = {}
+
+    # This server binds to 127.0.0.1 only, but "only reachable from this machine"
+    # is not "only reachable by this app": any other local process, or a website
+    # open in the user's regular browser, can otherwise fire unauthenticated
+    # requests at a known/guessable localhost port (connect, sync, save settings,
+    # trigger a backup...). The token is embedded into the index page we serve
+    # ourselves and echoed back on every /api/* call - a cross-origin page can't
+    # read it (blocked by browser same-origin policy) and a bare local process
+    # never sees it unless it already loaded our own UI.
+    app.state.api_token = api_token or secrets.token_urlsafe(32)
+
+    @app.middleware("http")
+    async def _require_api_token(request: Request, call_next):
+        if request.url.path.startswith("/api/"):
+            if request.headers.get("X-TradeAudit-Token") != app.state.api_token:
+                return Response(status_code=401, content="Missing or invalid API token.")
+        return await call_next(request)
 
     def closed_trades():
         trades = ctx.trade_repo.get_trades(ctx.current_login())
@@ -164,6 +182,20 @@ def create_app(ctx: AppContext) -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
         return {"path": str(path)}
+
+    @app.get("/api/logs/recent")
+    def recent_logs(lines: int = 300):
+        """
+        Tail the app's own log file. Lets a non-technical user grab diagnostic
+        context (e.g. to paste into a support request) without hunting through
+        %LOCALAPPDATA% for a file they don't know exists.
+        """
+        log_path = ctx.settings.log_dir / ctx.settings.log_file_name
+        if not log_path.exists():
+            return {"path": str(log_path), "lines": []}
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+        return {"path": str(log_path), "lines": [l.rstrip("\n") for l in all_lines[-lines:]]}
 
     # --------------------------------------------------------------- trades
 
@@ -303,6 +335,9 @@ def create_app(ctx: AppContext) -> FastAPI:
 
     @app.get("/")
     def index():
-        return FileResponse(str(STATIC_DIR / "index.html"))
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        token_script = f'<script>window.__TA_TOKEN__="{app.state.api_token}";</script>'
+        html = html.replace("</head>", f"{token_script}</head>")
+        return HTMLResponse(content=html)
 
     return app

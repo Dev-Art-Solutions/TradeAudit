@@ -9,17 +9,42 @@ from tradeaudit.webui.context import AppContext
 from tradeaudit.webui.server import create_app
 
 
+API_TOKEN = "test-token-fixed-for-assertions"
+
+
 @pytest.fixture
 def client(test_settings, test_db_manager):
     ctx = AppContext(settings=test_settings, db_manager=test_db_manager)
-    app = create_app(ctx)
-    return TestClient(app)
+    app = create_app(ctx, api_token=API_TOKEN)
+    return TestClient(app, headers={"X-TradeAudit-Token": API_TOKEN})
 
 
 def test_index_serves_spa_shell(client):
     res = client.get("/")
     assert res.status_code == 200
     assert "TradeAudit" in res.text
+
+
+def test_index_embeds_the_api_token_for_the_frontend_to_read(client):
+    res = client.get("/")
+    assert f'window.__TA_TOKEN__="{API_TOKEN}"' in res.text
+
+
+def test_api_rejects_requests_without_the_token(test_settings, test_db_manager):
+    ctx = AppContext(settings=test_settings, db_manager=test_db_manager)
+    app = create_app(ctx, api_token=API_TOKEN)
+    unauthenticated_client = TestClient(app)  # no token header at all
+
+    assert unauthenticated_client.get("/api/state").status_code == 401
+    assert unauthenticated_client.post("/api/sync", json={}).status_code == 401
+
+    wrong_token_client = TestClient(app, headers={"X-TradeAudit-Token": "wrong"})
+    assert wrong_token_client.get("/api/state").status_code == 401
+
+    # The page itself and its static assets must stay reachable without the
+    # token - the frontend has to be able to load the page to obtain it.
+    assert unauthenticated_client.get("/").status_code == 200
+    assert unauthenticated_client.get("/assets/app.js").status_code == 200
 
 
 def test_state_with_no_account_configured(client):
@@ -87,6 +112,16 @@ def test_breakdown_and_strategy_vs_trader_empty(client):
     assert client.get("/api/breakdown").status_code == 200
     svt = client.get("/api/strategy-vs-trader").json()
     assert svt["quality_verdict"] == "NO_TRADES"
+
+
+def test_recent_logs_endpoint_returns_a_list(client):
+    # Whether or not a log file exists yet for this settings instance, the
+    # endpoint must always respond with a path and a list, never error.
+    res = client.get("/api/logs/recent")
+    assert res.status_code == 200
+    body = res.json()
+    assert "path" in body
+    assert isinstance(body["lines"], list)
 
 
 def test_live_journal_without_account(client):

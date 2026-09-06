@@ -26,11 +26,31 @@ const PAGE_SUB = {
   settings: "MetaTrader 5 connection & storage",
 };
 
-let state = { route: "dashboard", trades: [], strategies: [], api: null };
+let state = { route: "dashboard", trades: [], strategies: [], api: null, hasAccount: false };
+
+function onboardingBannerHtml() {
+  if (state.hasAccount) return "";
+  return `
+    <div class="onboarding-banner">
+      <div>
+        <div class="ob-title">\u{1F44B} Get started with TradeAudit</div>
+        <div class="ob-sub">No MT5 account configured yet.</div>
+        <div class="ob-steps">
+          <b>1.</b> Open <b>MT5 Settings</b> ·
+          <b>2.</b> Enter the Login, Server and Password from your MetaTrader 5 terminal (Tools → Options → Server, or ask your broker) ·
+          <b>3.</b> Click <b>Connect</b>, then <b>Sync History</b> on the Trades tab.
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="navigate('settings')">Open Settings</button>
+    </div>`;
+}
 
 async function api(path, opts) {
   const res = await fetch("/api" + path, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-TradeAudit-Token": window.__TA_TOKEN__ || "",
+    },
     ...opts,
   });
   let body = null;
@@ -88,6 +108,7 @@ function navigate(route) {
 async function refreshStatus() {
   try {
     const s = await apiGet("/state");
+    state.hasAccount = !!(s.settings && s.settings.login);
     document.getElementById("version-footer").textContent = `${s.app_name} v${s.app_version}`;
     const badge = document.getElementById("status-badge");
     const text = document.getElementById("status-text");
@@ -173,7 +194,8 @@ async function viewDashboard() {
   }
   const m = data.metrics;
   if (!m.total_trades) {
-    content().innerHTML = emptyState("\u{1F4C8}", "No trades yet", "Connect your MT5 account and run a sync from the Trades tab to see performance analytics here.");
+    content().innerHTML = onboardingBannerHtml() +
+      emptyState("\u{1F4C8}", "No trades yet", "Connect your MT5 account and run a sync from the Trades tab to see performance analytics here.");
     return;
   }
   content().innerHTML = `
@@ -213,6 +235,7 @@ async function viewDashboard() {
 
 async function viewTrades() {
   content().innerHTML = `
+    ${onboardingBannerHtml()}
     <div class="toolbar">
       <div class="chip" id="trades-count-chip">Loading…</div>
       <div class="right">
@@ -313,6 +336,12 @@ async function viewSettings() {
   content().innerHTML = `
     <div class="card">
       <div class="card-title">\u2699\uFE0F MetaTrader 5 Terminal Configuration</div>
+      <div class="kpi-sub" style="margin-bottom:16px">
+        Find your Login, Server and Password inside your MT5 terminal:
+        open it, go to <b>Tools \u2192 Options \u2192 Server</b>, or check the account
+        details your broker emailed you when you opened the account. A demo
+        account works exactly the same way as a live one for this app.
+      </div>
       <div class="field">
         <label>MT5 Terminal Path <span class="text-dim">(optional \u2014 leave blank to use the last-used terminal)</span></label>
         <div class="input-row">
@@ -357,6 +386,18 @@ async function viewSettings() {
       <div class="btn-row" style="margin-top:0">
         <button class="btn" id="btn-backup">\u{1F4BE} Create Backup Now</button>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">\u{1F6E0}️ Diagnostics</div>
+      <div class="kpi-sub" style="margin-bottom:14px">
+        Something not working? Show the recent log and copy it into a support message or bug report.
+      </div>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn" id="btn-show-log">View Recent Log</button>
+        <button class="btn" id="btn-copy-log" style="display:none">Copy to Clipboard</button>
+      </div>
+      <div id="log-box" class="markdown-box" style="display:none;margin-top:14px;max-height:320px"></div>
     </div>
   `;
 
@@ -421,6 +462,28 @@ async function viewSettings() {
       const res = await apiPost("/backup", {});
       showTransientBanner("Backup created: " + res.path, true);
     } catch (e) { showTransientBanner(e.message, false); }
+  });
+
+  document.getElementById("btn-show-log").addEventListener("click", async () => {
+    const box = document.getElementById("log-box");
+    const copyBtn = document.getElementById("btn-copy-log");
+    try {
+      const res = await apiGet("/logs/recent?lines=300");
+      box.textContent = res.lines.length ? res.lines.join("\n") : `(no log entries yet at ${res.path})`;
+      box.style.display = "block";
+      copyBtn.style.display = "inline-flex";
+    } catch (e) {
+      showTransientBanner(e.message, false);
+    }
+  });
+
+  document.getElementById("btn-copy-log").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(document.getElementById("log-box").textContent);
+      showTransientBanner("Log copied to clipboard.", true);
+    } catch (e) {
+      showTransientBanner("Could not copy automatically - select the text manually.", false);
+    }
   });
 }
 
