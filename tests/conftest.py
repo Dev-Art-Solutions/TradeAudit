@@ -5,19 +5,9 @@ Pytest global fixtures for TradeAudit testing.
 import tempfile
 from pathlib import Path
 import pytest
-from PySide6.QtWidgets import QApplication
 
 from tradeaudit.app.config import Settings
 from tradeaudit.infrastructure.database.connection import DatabaseManager
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Ensure a single QApplication instance exists for GUI tests."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
 
 
 @pytest.fixture

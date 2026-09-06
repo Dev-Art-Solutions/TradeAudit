@@ -10,9 +10,6 @@ jobs:
     name: Build installer & portable release
     runs-on: windows-latest
 
-    env:
-      QT_QPA_PLATFORM: offscreen
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4

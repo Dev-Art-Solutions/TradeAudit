@@ -126,13 +126,13 @@ real MT5 trade history.
 
 ## 🖥️ Architecture
 
-The default UI is a **local web UI**: a FastAPI backend serving an
-HTML/CSS/JS frontend, hosted inside a native `pywebview` window (no browser
-chrome, no external server, nothing leaves `127.0.0.1`). A legacy PySide6
-(Qt6) UI remains available via `--legacy-qt` — see
-[docs/LEGACY_UI_STATUS.md](docs/LEGACY_UI_STATUS.md) for exactly what that
-does and doesn't include today. Every analytics/sync/risk service is
-UI-agnostic and shared by both.
+The UI is a **local web UI**: a FastAPI backend serving an HTML/CSS/JS
+frontend, hosted inside a native `pywebview` window (no browser chrome, no
+external server, nothing leaves `127.0.0.1`). The project originally shipped
+a PySide6 (Qt6) desktop UI; it was removed once the web UI reached full
+feature parity — see [the case study](PORTFOLIO_CASE_STUDY.md) for that
+migration. Every analytics/sync/risk service is UI-agnostic — the UI layer
+is just a thin frontend over `app/`, `domain/`, and `infrastructure/`.
 
 ```mermaid
 flowchart TD
@@ -191,8 +191,7 @@ pip install -e .[dev]
 ### Launch
 
 ```bash
-python -m tradeaudit              # web UI (default)
-python -m tradeaudit --legacy-qt  # legacy PySide6 UI
+python -m tradeaudit
 ```
 
 ---
@@ -241,8 +240,7 @@ src/tradeaudit/
 ├── app/                  # Application services (Analytics, Sync, Compliance, Quant, Charting)
 ├── domain/               # Domain entities (Trade, Strategy, Metrics, Candles, Enums)
 ├── infrastructure/       # MT5 adapters, SQLite repositories, Credential locker
-├── webui/                # FastAPI backend + HTML/CSS/JS frontend (default UI)
-└── ui/                   # Legacy PySide6 GUI (--legacy-qt)
+└── webui/                # FastAPI backend + HTML/CSS/JS frontend (UI)
 ```
 
 For full architectural guidelines and developer references, see

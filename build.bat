@@ -37,7 +37,6 @@ REM chromium) this script doesn't set up, and browser end-to-end coverage
 REM isn't required to produce a working exe. Run it yourself with:
 REM   .venv_build\Scripts\python -m playwright install chromium
 REM   .venv_build\Scripts\python -m pytest tests\e2e
-set QT_QPA_PLATFORM=offscreen
 "%PY%" -m pytest tests\unit -q
 if !ERRORLEVEL! neq 0 (
     echo [ERROR] Test suite failed! Aborting packaging.

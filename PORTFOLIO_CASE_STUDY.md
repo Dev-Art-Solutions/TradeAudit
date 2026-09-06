@@ -120,9 +120,13 @@ Behavioral Analysis    Strategy vs Trader Comparison
        Web UI inside a pywebview window (no browser chrome)
 ```
 
-The domain/service/infrastructure layers have no UI dependency at all —
-both the current web UI and the legacy Qt UI call the exact same service
-classes.
+The domain/service/infrastructure layers have no UI dependency at all — the
+web UI is a thin frontend over the same service classes a first PySide6
+(Qt6) desktop UI used to call. That Qt UI was retired once the web UI
+reached full feature parity, verified by a real end-to-end test for every
+capability it used to be the only place to find (chart annotation
+coverage, zoom/pan, clipboard image copy, per-annotation erase) rather
+than by inspection.
 
 ## 5. Key Capabilities
 
@@ -150,8 +154,6 @@ README use a fully synthetic seeded dataset.
 Python · MetaTrader5 Python API · FastAPI · pywebview · SQLAlchemy ·
 SQLite (WAL mode, enforced foreign keys) · HTML/CSS/JavaScript ·
 PyInstaller · Inno Setup · GitHub Actions · pytest · Playwright.
-PySide6 (Qt6) remains in the repository as a documented legacy UI — see
-[docs/LEGACY_UI_STATUS.md](docs/LEGACY_UI_STATUS.md).
 
 ## 8. What this demonstrates for client work
 

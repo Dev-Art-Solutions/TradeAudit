@@ -7,13 +7,12 @@ TradeAudit is a desktop trading intelligence platform for **MetaTrader 5 (MT5)**
 ## 🛠️ Technology Stack
 
 - **Language & Runtime:** Python 3.11+ (Windows x64 primary target)
-- **UI (default):** FastAPI local backend (127.0.0.1, token-authenticated) serving an HTML/CSS/JS frontend hosted inside a native `pywebview` window - same dark theme (`#0d1117`, `#161b22`, `#1f2937`)
-- **UI (legacy):** PySide6 (Qt 6.x), still available via `python -m tradeaudit --legacy-qt` - see `docs/LEGACY_UI_STATUS.md` for current parity
+- **UI:** FastAPI local backend (127.0.0.1, token-authenticated) serving an HTML/CSS/JS frontend hosted inside a native `pywebview` window - dark theme (`#0d1117`, `#161b22`, `#1f2937`). A prior PySide6 (Qt6) UI was removed once the web UI reached full feature parity - see `PORTFOLIO_CASE_STUDY.md` for the migration history.
 - **Database & ORM:** SQLite 3 with SQLAlchemy 2.x (WAL mode, foreign keys enforced)
 - **Broker & Market Integration:** MetaTrader5 Python SDK (with synthetic offline fallbacks for testing/demo)
 - **Security & Credentials:** Python `keyring` backed by Windows Credential Locker
 - **Distribution & Packaging:** PyInstaller (`TradeAudit.spec`), Inno Setup (`installer/TradeAudit.iss`), one-command `build.bat`, GitHub Actions CI + tag-triggered release workflow
-- **Testing:** `pytest` (unit), Playwright + `pytest-playwright` (browser end-to-end against the real web UI), `pytest-qt` (legacy Qt UI only)
+- **Testing:** `pytest` (unit), Playwright + `pytest-playwright` (browser end-to-end against the real rendered UI)
 
 ---
 
@@ -75,36 +74,14 @@ TradeAudit/
 │   │   └── security/            # Secure credential store using system keyring
 │   │       └── credential_store.py
 │   │
-│   ├── webui/                    # Default UI: FastAPI backend + HTML/CSS/JS frontend
-│   │   ├── server.py             # create_app(): all /api/* routes, token-auth middleware
-│   │   ├── context.py            # AppContext: wires every service, shared by all routes
-│   │   ├── launcher.py           # WebUIApplication: uvicorn thread + pywebview window + JsApi (native file dialog)
-│   │   └── static/                # index.html / app.js / styles.css (vanilla JS SPA, no build step)
-│   │
-│   └── ui/                      # Legacy PySide6 Presentation Layer (--legacy-qt)
-│       ├── main_window.py       # Main application shell and tab coordination
-│       ├── dialogs/             # Modal dialogs (TradeChartDialog, StrategyDialog, etc.)
-│       ├── views/               # Major tab views:
-│       │   ├── dashboard_view.py          # Performance overview, KPI cards & QtCharts
-│       │   ├── trades_view.py             # Aggregated trades & deals table with sync
-│       │   ├── strategy_view.py           # Strategy editor & rule manager
-│       │   ├── strategy_vs_trader_view.py # 4-quadrant discipline matrix & deviation cost
-│       │   ├── breakdown_view.py          # Symbol, session, weekday, hour analytics
-│       │   ├── live_journal_view.py       # Real-time position monitor & SL/TP modifications
-│       │   ├── report_view.py             # Markdown report generation & AI prompt export
-│       │   ├── quant_research_view.py     # Monte Carlo, Risk of Ruin & rolling analytics
-│       │   ├── trade_chart_view.py        # Interactive candlestick chart visualizer & replay
-│       │   └── settings_view.py           # MT5 connection & database backup management
-│       └── widgets/             # Reusable UI widgets
-│           ├── account_info_card.py
-│           ├── candlestick_chart_widget.py
-│           ├── charts_widget.py
-│           ├── connection_status_badge.py
-│           ├── filter_bar.py
-│           └── kpi_card.py
+│   └── webui/                    # UI: FastAPI backend + HTML/CSS/JS frontend
+│       ├── server.py             # create_app(): all /api/* routes, token-auth middleware
+│       ├── context.py            # AppContext: wires every service, shared by all routes
+│       ├── launcher.py           # WebUIApplication: uvicorn thread + pywebview window + JsApi (native file dialog)
+│       └── static/                # index.html / app.js / styles.css (vanilla JS SPA, no build step)
 │
 └── tests/
-    ├── unit/                     # 185 tests covering domain/services/infrastructure/webui/legacy-Qt
+    ├── unit/                     # 185 tests covering domain/services/infrastructure/webui
     └── e2e/                      # Playwright-driven browser tests against the real web UI
 ```
 
