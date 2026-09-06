@@ -27,6 +27,10 @@ dev = [
     "pytest-qt>=4.4.0",
     "httpx>=0.27.0",
 ]
+build = [
+    "pyinstaller>=6.0.0",
+    "Pillow>=10.0.0",
+]
 
 [project.scripts]
 tradeaudit = "tradeaudit.__main__:main"

@@ -52,6 +52,7 @@ cover/
 
 # Virtual Environments
 .venv/
+.venv_build/
 venv/
 ENV/
 env/
