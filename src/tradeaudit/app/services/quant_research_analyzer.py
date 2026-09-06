@@ -91,9 +91,14 @@ class QuantResearchAnalyzer:
             hit_ruin = False
             hit_target = False
 
+            # Draw the whole path's resampled R-values in one batched call.
+            # random.choices() (uniform, with replacement) is dramatically faster than
+            # calling random.choice() per step - the latter's rejection-sampling internals
+            # dominated runtime on real accounts (15M+ calls, ~15-20s on a 5k-trade sync).
+            path_r_values = rng.choices(r_list, k=horizon)
+
             for step in range(1, horizon + 1):
-                # Resample single trade R with replacement
-                trade_r = rng.choice(r_list)
+                trade_r = path_r_values[step - 1]
                 cum_r += trade_r
                 paths_by_step[step][s] = cum_r
 
@@ -302,8 +307,11 @@ class QuantResearchAnalyzer:
 
                 wins_r = [r for r in r_vals if r > 0]
                 losses_r = [r for r in r_vals if r < 0]
-                avg_win_r = statistics.mean(wins_r) if wins_r else 0.0
-                avg_loss_r = abs(statistics.mean(losses_r)) if losses_r else 0.0
+                # sum()/len() instead of statistics.mean(): identical result, but mean()'s
+                # exact-arithmetic internals made this the dominant cost of this loop
+                # (called per-window across ~6.8k window positions - ~20s on a real account).
+                avg_win_r = (sum(wins_r) / len(wins_r)) if wins_r else 0.0
+                avg_loss_r = abs(sum(losses_r) / len(losses_r)) if losses_r else 0.0
 
                 p_win = win_count / len(r_vals) if r_vals else 0.0
                 p_loss = loss_count / len(r_vals) if r_vals else 0.0
@@ -333,7 +341,7 @@ class QuantResearchAnalyzer:
                     win_rate=round(win_rate, 1),
                     expectancy_r=round(expectancy_r, 3),
                     profit_factor=round(profit_factor, 2) if profit_factor is not None else None,
-                    avg_r=round(statistics.mean(r_vals), 3) if r_vals else 0.0,
+                    avg_r=round(sum(r_vals) / len(r_vals), 3) if r_vals else 0.0,
                     max_drawdown_r=round(max_dd, 2)
                 ))
 
@@ -420,7 +428,7 @@ class QuantResearchAnalyzer:
         resampled_avg_rs: List[float] = []
 
         for _ in range(num_resamples):
-            resample = [rng.choice(closed_trades) for _ in range(n_samples)]
+            resample = rng.choices(closed_trades, k=n_samples)
             r_vals = [float(t.realized_r) for t in resample if t.realized_r is not None]
             profits = [float(t.profit) for t in resample if t.profit is not None]
 
@@ -430,15 +438,16 @@ class QuantResearchAnalyzer:
             wr = (win_count / len(r_vals)) * 100 if r_vals else 0.0
             resampled_win_rates.append(wr)
 
-            # Avg R
-            avg_r = statistics.mean(r_vals) if r_vals else 0.0
+            # Avg R (sum()/len() instead of statistics.mean(): same result, far less overhead
+            # across num_resamples iterations each processing the full n_samples resample)
+            avg_r = (sum(r_vals) / len(r_vals)) if r_vals else 0.0
             resampled_avg_rs.append(avg_r)
 
             # Expectancy
             wins_r = [r for r in r_vals if r > 0]
             losses_r = [r for r in r_vals if r < 0]
-            avg_win_r = statistics.mean(wins_r) if wins_r else 0.0
-            avg_loss_r = abs(statistics.mean(losses_r)) if losses_r else 0.0
+            avg_win_r = (sum(wins_r) / len(wins_r)) if wins_r else 0.0
+            avg_loss_r = abs(sum(losses_r) / len(losses_r)) if losses_r else 0.0
             p_win = win_count / len(r_vals) if r_vals else 0.0
             p_loss = loss_count / len(r_vals) if r_vals else 0.0
             exp_r = (p_win * avg_win_r) - (p_loss * avg_loss_r)
@@ -516,6 +525,7 @@ class QuantResearchAnalyzer:
         ror = self.calculate_risk_of_ruin(
             trades=trades,
             max_drawdown_tolerance_r=max_drawdown_tolerance_r,
+            num_simulations=num_simulations,
             random_seed=random_seed
         )
 

@@ -105,6 +105,28 @@ def test_high_discipline_verdict():
     assert comparison.quality_verdict == "HIGH_DISCIPLINE"
 
 
+def test_no_strategy_assigned_does_not_fabricate_deviation_cost():
+    """
+    Real accounts commonly have trades with no strategy assigned at all
+    (compliance_status stays UNCHECKED). Before the fix, deviation_cost_r was
+    computed as compliant_perf.net_r (0.0 default) - total_perf.net_r, which
+    fabricated a large "deviation cost" out of thin air and mislabeled the
+    verdict as FLAWED_STRATEGY_AND_EXECUTION whenever the account was simply
+    losing money with no strategy tracking in place.
+    """
+    now = datetime.now()
+    trades = [
+        Trade(id=1, status="CLOSED", profit=-100.0, realized_r=-1.0,
+              compliance_status=ComplianceStatus.UNCHECKED.value, open_time=now, close_time=now),
+        Trade(id=2, status="CLOSED", profit=-50.0, realized_r=-0.5,
+              compliance_status=ComplianceStatus.UNCHECKED.value, open_time=now, close_time=now),
+    ]
+    comparison = StrategyTraderComparator.compare(trades)
+    assert comparison.deviation_cost_r == 0.0
+    assert comparison.deviation_cost_monetary == 0.0
+    assert comparison.quality_verdict == "NO_STRATEGY_ASSIGNED"
+
+
 def test_all_trades_deviations_verdict():
     now = datetime.now()
     trades = [

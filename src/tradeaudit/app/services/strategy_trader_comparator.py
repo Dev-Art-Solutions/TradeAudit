@@ -106,12 +106,23 @@ class StrategyTraderComparator:
         quadrants.bad_losses_net_r = round(quadrants.bad_losses_net_r, 4)
         quadrants.bad_losses_profit = round(quadrants.bad_losses_profit, 2)
 
-        # Deviation Cost R: Performance gap between pure compliance and actual realized
-        deviation_cost_r = round(compliant_perf.net_r - total_perf.net_r, 4)
-        deviation_cost_monetary = round(compliant_perf.net_profit - total_perf.net_profit, 2)
+        # Deviation Cost R: performance gap between pure compliance and actual realized.
+        # Only meaningful once at least one trade has actually been checked against a
+        # strategy - with no compliant trades at all, "compliant_perf.net_r" is just the
+        # PerformanceMetrics default (0.0), which would otherwise make the cost equal to
+        # the *negative* of total performance for every unassigned account.
+        has_compliance_data = len(compliant_trades) > 0 or len(deviation_trades) > 0
+        if has_compliance_data:
+            deviation_cost_r = round(compliant_perf.net_r - total_perf.net_r, 4)
+            deviation_cost_monetary = round(compliant_perf.net_profit - total_perf.net_profit, 2)
+        else:
+            deviation_cost_r = 0.0
+            deviation_cost_monetary = 0.0
 
         # Quality Diagnostic Verdict
-        if len(compliant_trades) == 0 and len(deviation_trades) > 0:
+        if not has_compliance_data:
+            quality_verdict = "NO_STRATEGY_ASSIGNED"
+        elif len(compliant_trades) == 0 and len(deviation_trades) > 0:
             quality_verdict = "ALL_TRADES_DEVIATIONS"
         elif compliant_perf.net_r > 0 and deviation_cost_r > 0:
             quality_verdict = "EXECUTION_BREAKDOWN"

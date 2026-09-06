@@ -13,6 +13,10 @@ datas = []
 if resources_dir.exists():
     datas.append((str(resources_dir), "resources"))
 
+webui_static_dir = src_dir / "tradeaudit" / "webui" / "static"
+if webui_static_dir.exists():
+    datas.append((str(webui_static_dir), "tradeaudit/webui/static"))
+
 hidden_imports = [
     "keyring.backends",
     "keyring.backends.Windows",
@@ -23,6 +27,19 @@ hidden_imports = [
     "PySide6.QtCore",
     "PySide6.QtGui",
     "PySide6.QtWidgets",
+    "fastapi",
+    "uvicorn",
+    "uvicorn.logging",
+    "uvicorn.loops",
+    "uvicorn.loops.auto",
+    "uvicorn.protocols",
+    "uvicorn.protocols.http",
+    "uvicorn.protocols.http.auto",
+    "uvicorn.protocols.websockets",
+    "uvicorn.protocols.websockets.auto",
+    "uvicorn.lifespan",
+    "uvicorn.lifespan.on",
+    "webview",
 ]
 
 # Optional MT5 import

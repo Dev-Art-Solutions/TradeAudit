@@ -190,10 +190,17 @@ class TradeRepository:
                 TradeModel.account_id == account_id
             ).order_by(TradeModel.open_time.desc()).all()
 
+            # Fetch every deal for the account in one query and group by trade_id,
+            # instead of issuing a separate query per trade (N+1 - was ~4s for 5k trades).
+            all_deal_models = session.query(TradeDealModel).filter(
+                TradeDealModel.account_id == account_id
+            ).order_by(TradeDealModel.time.asc()).all()
+            deals_by_trade_id: dict = {}
+            for dm in all_deal_models:
+                deals_by_trade_id.setdefault(dm.trade_id, []).append(dm)
+
             for tm in trade_models:
-                deal_models = session.query(TradeDealModel).filter(
-                    TradeDealModel.trade_id == tm.id
-                ).order_by(TradeDealModel.time.asc()).all()
+                deal_models = deals_by_trade_id.get(tm.id, [])
 
                 deals = [
                     TradeDeal(
