@@ -71,6 +71,9 @@ venv.bak/
 tradeaudit.db
 logs/
 *.log
+backups/
+exports/
+screenshots/
 
 # IDE & Editors
 .vscode/

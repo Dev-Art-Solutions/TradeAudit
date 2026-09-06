@@ -2,6 +2,8 @@
 Smoke tests for the FastAPI web UI backend - covers the empty-account /
 no-MT5 paths every real first-run hits, plus basic strategy CRUD.
 """
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -122,6 +124,78 @@ def test_recent_logs_endpoint_returns_a_list(client):
     body = res.json()
     assert "path" in body
     assert isinstance(body["lines"], list)
+
+
+@pytest.fixture
+def existing_trade_id(test_settings, test_db_manager):
+    """Journal notes/annotations have a real FK to trades - seed one to reference."""
+    from datetime import datetime, timezone
+    from tradeaudit.domain.models import Trade
+    from tradeaudit.infrastructure.repositories.trade_repository import TradeRepository
+
+    repo = TradeRepository(test_db_manager)
+    saved = repo.save_trades(1, [Trade(
+        account_id=1, position_id=1, symbol="EURUSD", direction="BUY",
+        open_time=datetime(2026, 1, 1, tzinfo=timezone.utc), status="CLOSED",
+    )])
+    return saved[0].id
+
+
+def test_journal_note_round_trip(client, existing_trade_id):
+    default_note = client.get(f"/api/trades/{existing_trade_id}/journal").json()
+    assert default_note["trade_id"] == existing_trade_id
+    assert default_note["rating"] == "A"
+
+    saved = client.post(f"/api/trades/{existing_trade_id}/journal", json={
+        "setup_name": "Breakout retest",
+        "rating": "B",
+        "pre_trade_thesis": "Expecting continuation above resistance.",
+        "post_trade_review": "Entered late.",
+        "lessons_learned": "Wait for confirmation candle.",
+        "mistakes_identified": ["FOMO_ENTRY"],
+        "checklist_data": {"Checked HTF trend": True},
+    }).json()
+    assert saved["rating"] == "B"
+    assert saved["mistakes_identified"] == ["FOMO_ENTRY"]
+
+    reloaded = client.get(f"/api/trades/{existing_trade_id}/journal").json()
+    assert reloaded["pre_trade_thesis"] == "Expecting continuation above resistance."
+
+
+def test_annotation_crud(client, existing_trade_id):
+    created = client.post(f"/api/trades/{existing_trade_id}/annotations", json={
+        "timeframe": "M15",
+        "annotation_type": "TREND_LINE",
+        "p1_time": "2026-01-01T10:00:00+00:00",
+        "p1_price": 1.1000,
+        "p2_time": "2026-01-01T11:00:00+00:00",
+        "p2_price": 1.1050,
+        "color": "#58a6ff",
+    }).json()
+    assert created["id"] is not None
+
+    listed = client.get(f"/api/trades/{existing_trade_id}/annotations").json()
+    assert any(a["id"] == created["id"] for a in listed)
+
+    deleted = client.delete(f"/api/annotations/{created['id']}").json()
+    assert deleted["ok"] is True
+
+
+def test_annotation_rejects_unknown_type(client, existing_trade_id):
+    res = client.post(f"/api/trades/{existing_trade_id}/annotations", json={"annotation_type": "NOT_A_REAL_TYPE"})
+    assert res.status_code == 400
+
+
+def test_screenshot_upload_saves_file_and_attaches_to_journal(client, existing_trade_id):
+    tiny_png_base64 = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    res = client.post(f"/api/trades/{existing_trade_id}/screenshot", json={"image_base64": "data:image/png;base64," + tiny_png_base64})
+    assert res.status_code == 200
+    body = res.json()
+    assert Path(body["path"]).exists()
+    assert body["path"] in body["note"]["screenshot_paths"]
+    Path(body["path"]).unlink(missing_ok=True)
 
 
 def test_live_journal_without_account(client):

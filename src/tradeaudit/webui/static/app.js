@@ -790,6 +790,20 @@ function renderRollingTable(rolling) {
 
 // ------------------------------------------------------------------ trade chart
 
+// TC holds all Trade Chart tab state: loaded data, replay playback, and the
+// pixel<->price/time mapping from the last draw (needed for click-to-annotate).
+const TC = {
+  tradeId: null, candles: [], overlay: null, annotations: [],
+  visibleCount: 0, playing: false, timer: null, speed: 1,
+  drawMode: null, pendingPoint: null, geom: null,
+};
+
+const DRAW_TOOLS = [
+  { type: "TREND_LINE", label: "\u{1F4C8} Trendline" },
+  { type: "HORIZONTAL_RAY", label: "\u2796 H-Ray" },
+  { type: "TEXT_NOTE", label: "\u{1F4DD} Note" },
+];
+
 async function viewTradeChart() {
   await loadTrades();
   const options = state.trades
@@ -804,34 +818,222 @@ async function viewTradeChart() {
           <button class="btn btn-primary" id="tc-load">Load Chart</button>
         </div>
       </div>
-      <canvas id="tc-canvas" style="width:100%;height:420px;display:block"></canvas>
+
+      <div class="toolbar">
+        <div class="right">
+          <button class="btn" id="tc-reset" title="Jump back to the start of the replay">\u23ee Reset</button>
+          <button class="btn" id="tc-step-back" title="Step back one bar">\u23f4</button>
+          <button class="btn btn-primary" id="tc-play">\u25b6 Play</button>
+          <button class="btn" id="tc-step-fwd" title="Step forward one bar">\u23f5</button>
+          <select id="tc-speed">
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+          </select>
+        </div>
+        <div class="right">
+          ${DRAW_TOOLS.map((t) => `<button class="btn" data-draw="${t.type}">${t.label}</button>`).join("")}
+          <button class="btn btn-danger" id="tc-clear-annotations">Clear Drawings</button>
+          <button class="btn" id="tc-screenshot">\u{1F4F7} Screenshot</button>
+        </div>
+      </div>
+
+      <canvas id="tc-canvas" style="width:100%;height:420px;display:block;cursor:crosshair"></canvas>
       <div id="tc-overlay" class="kpi-sub" style="margin-top:12px"></div>
+      <div id="tc-drawhint" class="kpi-sub text-dim" style="margin-top:4px"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">\u{1F4D3} Trade Journal</div>
+      <div class="grid grid-2">
+        <div class="field"><label>Setup Name</label><input type="text" id="tj-setup" /></div>
+        <div class="field"><label>Grade</label>
+          <select id="tj-rating">${["A+","A","B","C","D","F"].map((g) => `<option>${g}</option>`).join("")}</select>
+        </div>
+      </div>
+      <div class="field"><label>Pre-Trade Thesis</label><textarea id="tj-pre" rows="2"></textarea></div>
+      <div class="field"><label>Post-Trade Review</label><textarea id="tj-post" rows="2"></textarea></div>
+      <div class="field"><label>Lessons Learned</label><textarea id="tj-lessons" rows="2"></textarea></div>
+      <div class="kpi-sub" id="tj-screenshots" style="margin-bottom:10px"></div>
+      <div class="btn-row" style="margin-top:0"><button class="btn btn-primary" id="tj-save">Save Journal Entry</button></div>
     </div>
   `;
   if (!state.trades.length) {
     content().querySelector(".card").insertAdjacentHTML("beforeend", emptyState("\u{1F56F}\uFE0F", "No trades to chart", "Sync trade history first."));
     return;
   }
+
   document.getElementById("tc-load").addEventListener("click", loadTradeChart);
+  document.getElementById("tc-play").addEventListener("click", toggleReplay);
+  document.getElementById("tc-reset").addEventListener("click", resetReplay);
+  document.getElementById("tc-step-back").addEventListener("click", () => stepReplay(-1));
+  document.getElementById("tc-step-fwd").addEventListener("click", () => stepReplay(1));
+  document.getElementById("tc-speed").addEventListener("change", (e) => { TC.speed = parseFloat(e.target.value); if (TC.playing) { stopReplayTimer(); startReplayTimer(); } });
+  document.querySelectorAll("[data-draw]").forEach((b) => b.addEventListener("click", () => setDrawMode(b.dataset.draw)));
+  document.getElementById("tc-clear-annotations").addEventListener("click", clearAnnotations);
+  document.getElementById("tc-screenshot").addEventListener("click", takeScreenshot);
+  document.getElementById("tc-canvas").addEventListener("click", onCanvasClick);
+  document.getElementById("tj-save").addEventListener("click", saveJournalEntry);
+
   await loadTradeChart();
 }
 
 async function loadTradeChart() {
+  stopReplayTimer();
   const tradeId = document.getElementById("tc-trade").value;
   const tf = document.getElementById("tc-timeframe").value;
   if (!tradeId) return;
+  TC.tradeId = tradeId;
+
   let data;
   try { data = await apiGet(`/trade-chart/${tradeId}?timeframe=${tf}`); }
   catch (e) { showTransientBanner(e.message, false); return; }
-  drawCandles(document.getElementById("tc-canvas"), data.candles, data.overlay);
-  const o = data.overlay;
+  TC.candles = data.candles || [];
+  TC.overlay = data.overlay;
+  TC.visibleCount = TC.candles.length; // show the full chart by default; Reset scrubs back for replay
+  document.getElementById("tc-play").innerHTML = "\u25b6 Play";
+  TC.playing = false;
+
+  try { TC.annotations = await apiGet(`/trades/${tradeId}/annotations?timeframe=${tf}`); }
+  catch (e) { TC.annotations = []; }
+
+  renderTradeChart();
+
+  let note;
+  try { note = await apiGet(`/trades/${tradeId}/journal`); } catch (e) { note = null; }
+  document.getElementById("tj-setup").value = note ? note.setup_name : "";
+  document.getElementById("tj-rating").value = note ? note.rating : "A";
+  document.getElementById("tj-pre").value = note ? note.pre_trade_thesis : "";
+  document.getElementById("tj-post").value = note ? note.post_trade_review : "";
+  document.getElementById("tj-lessons").value = note ? note.lessons_learned : "";
+  document.getElementById("tj-screenshots").textContent = note && note.screenshot_paths.length
+    ? `${note.screenshot_paths.length} screenshot(s) saved to disk.` : "No screenshots saved yet.";
+}
+
+function renderTradeChart() {
+  const o = TC.overlay;
   document.getElementById("tc-overlay").innerHTML =
     `Entry ${fmtNum(o.entry_price, 5)} \u00b7 Exit ${o.exit_price !== null ? fmtNum(o.exit_price, 5) : "\u2014"} \u00b7 ` +
     `SL ${o.initial_sl !== null ? fmtNum(o.initial_sl, 5) : "\u2014"} \u00b7 TP ${o.initial_tp !== null ? fmtNum(o.initial_tp, 5) : "\u2014"} \u00b7 ` +
-    `R: ${o.realized_r !== null ? fmtNum(o.realized_r, 2) : "unknown"}`;
+    `R: ${o.realized_r !== null ? fmtNum(o.realized_r, 2) : "unknown"} \u00b7 Bar ${TC.visibleCount}/${TC.candles.length}`;
+  drawCandles(document.getElementById("tc-canvas"), TC.candles.slice(0, TC.visibleCount), TC.overlay, TC.annotations);
 }
 
-function drawCandles(canvas, candles, overlay) {
+// ------------------------------------------------------------- replay controls
+
+function startReplayTimer() {
+  const baseMs = 400;
+  TC.timer = setInterval(() => {
+    if (TC.visibleCount >= TC.candles.length) { stopReplayTimer(); return; }
+    TC.visibleCount += 1;
+    renderTradeChart();
+  }, baseMs / TC.speed);
+}
+function stopReplayTimer() {
+  if (TC.timer) clearInterval(TC.timer);
+  TC.timer = null;
+}
+function toggleReplay() {
+  TC.playing = !TC.playing;
+  document.getElementById("tc-play").innerHTML = TC.playing ? "\u23f8 Pause" : "\u25b6 Play";
+  if (TC.playing) startReplayTimer(); else stopReplayTimer();
+}
+function resetReplay() {
+  stopReplayTimer();
+  TC.playing = false;
+  document.getElementById("tc-play").innerHTML = "\u25b6 Play";
+  TC.visibleCount = Math.min(15, TC.candles.length);
+  renderTradeChart();
+}
+function stepReplay(delta) {
+  stopReplayTimer();
+  TC.playing = false;
+  document.getElementById("tc-play").innerHTML = "\u25b6 Play";
+  TC.visibleCount = Math.max(2, Math.min(TC.candles.length, TC.visibleCount + delta));
+  renderTradeChart();
+}
+
+// ------------------------------------------------------------- drawing tools
+
+function setDrawMode(type) {
+  TC.drawMode = (TC.drawMode === type) ? null : type;
+  TC.pendingPoint = null;
+  document.querySelectorAll("[data-draw]").forEach((b) => b.classList.toggle("btn-primary", b.dataset.draw === TC.drawMode));
+  const hint = document.getElementById("tc-drawhint");
+  if (!TC.drawMode) { hint.textContent = ""; return; }
+  hint.textContent = TC.drawMode === "TEXT_NOTE"
+    ? "Click on the chart to place a note."
+    : "Click two points on the chart to draw.";
+}
+
+async function onCanvasClick(evt) {
+  if (!TC.drawMode || !TC.geom) return;
+  const rect = evt.target.getBoundingClientRect();
+  const x = evt.clientX - rect.left, y = evt.clientY - rect.top;
+  const point = { time: TC.geom.timeAt(x), price: TC.geom.priceAt(y) };
+
+  if (TC.drawMode === "TEXT_NOTE") {
+    const text = prompt("Note text:");
+    if (text) await postAnnotation({ annotation_type: "TEXT_NOTE", p1_time: point.time, p1_price: point.price, p2_time: point.time, p2_price: point.price, text });
+    return;
+  }
+  if (TC.drawMode === "HORIZONTAL_RAY") {
+    await postAnnotation({ annotation_type: "HORIZONTAL_RAY", p1_time: point.time, p1_price: point.price, p2_time: point.time, p2_price: point.price });
+    return;
+  }
+  // TREND_LINE: two clicks
+  if (!TC.pendingPoint) { TC.pendingPoint = point; return; }
+  await postAnnotation({ annotation_type: "TREND_LINE", p1_time: TC.pendingPoint.time, p1_price: TC.pendingPoint.price, p2_time: point.time, p2_price: point.price });
+  TC.pendingPoint = null;
+}
+
+async function postAnnotation(fields) {
+  try {
+    const tf = document.getElementById("tc-timeframe").value;
+    const saved = await apiPost(`/trades/${TC.tradeId}/annotations`, { timeframe: tf, color: "#58a6ff", line_width: 2, ...fields });
+    TC.annotations.push(saved);
+    renderTradeChart();
+  } catch (e) { showTransientBanner(e.message, false); }
+}
+
+async function clearAnnotations() {
+  try {
+    const tf = document.getElementById("tc-timeframe").value;
+    await api(`/trades/${TC.tradeId}/annotations?timeframe=${tf}`, { method: "DELETE" });
+    TC.annotations = [];
+    renderTradeChart();
+  } catch (e) { showTransientBanner(e.message, false); }
+}
+
+async function takeScreenshot() {
+  const canvas = document.getElementById("tc-canvas");
+  try {
+    const dataUrl = canvas.toDataURL("image/png");
+    const res = await apiPost(`/trades/${TC.tradeId}/screenshot`, { image_base64: dataUrl });
+    document.getElementById("tj-screenshots").textContent = `${res.note.screenshot_paths.length} screenshot(s) saved to disk.`;
+    showTransientBanner("Screenshot saved to " + res.path, true);
+  } catch (e) { showTransientBanner(e.message, false); }
+}
+
+async function saveJournalEntry() {
+  try {
+    await apiPost(`/trades/${TC.tradeId}/journal`, {
+      setup_name: document.getElementById("tj-setup").value,
+      rating: document.getElementById("tj-rating").value,
+      pre_trade_thesis: document.getElementById("tj-pre").value,
+      post_trade_review: document.getElementById("tj-post").value,
+      lessons_learned: document.getElementById("tj-lessons").value,
+      mistakes_identified: [],
+      checklist_data: {},
+    });
+    showTransientBanner("Journal entry saved.", true);
+  } catch (e) { showTransientBanner(e.message, false); }
+}
+
+// ------------------------------------------------------------- chart rendering
+
+function drawCandles(canvas, candles, overlay, annotations) {
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -840,6 +1042,7 @@ function drawCandles(canvas, candles, overlay) {
   ctx.clearRect(0, 0, w, h);
   if (!candles || !candles.length) {
     ctx.fillStyle = "#6e7681"; ctx.fillText("No candle data available", 12, h / 2);
+    TC.geom = null;
     return;
   }
   const highs = candles.map((c) => c.high), lows = candles.map((c) => c.low);
@@ -851,6 +1054,19 @@ function drawCandles(canvas, candles, overlay) {
   const range = max - min;
   const cw = w / candles.length;
   const y = (price) => h - ((price - min) / range) * h;
+  const priceAt = (py) => min + ((h - py) / h) * range;
+  const timestamps = candles.map((c) => new Date(c.timestamp).getTime());
+  const xAt = (isoTime) => {
+    const t = new Date(isoTime).getTime();
+    let idx = timestamps.findIndex((ct) => ct >= t);
+    if (idx === -1) idx = timestamps.length - 1;
+    return idx * cw + cw / 2;
+  };
+  const timeAt = (px) => {
+    const idx = Math.max(0, Math.min(candles.length - 1, Math.floor(px / cw)));
+    return candles[idx].timestamp;
+  };
+  TC.geom = { priceAt, timeAt };
 
   candles.forEach((c, i) => {
     const x = i * cw + cw / 2;
@@ -876,6 +1092,28 @@ function drawCandles(canvas, candles, overlay) {
   hline(overlay.entry_price, "#58a6ff", "Entry " + overlay.entry_price);
   hline(overlay.initial_sl, "#ef5350", "SL");
   hline(overlay.initial_tp, "#26a69a", "TP");
+
+  (annotations || []).forEach((a) => {
+    ctx.strokeStyle = a.color || "#f59e0b";
+    ctx.fillStyle = a.color || "#f59e0b";
+    ctx.lineWidth = a.line_width || 2;
+    ctx.font = "11px Segoe UI";
+    if (a.annotation_type === "TREND_LINE") {
+      ctx.beginPath();
+      ctx.moveTo(xAt(a.p1_time), y(a.p1_price));
+      ctx.lineTo(xAt(a.p2_time), y(a.p2_price));
+      ctx.stroke();
+    } else if (a.annotation_type === "HORIZONTAL_RAY") {
+      const yy = y(a.p1_price);
+      ctx.beginPath();
+      ctx.moveTo(xAt(a.p1_time), yy);
+      ctx.lineTo(w, yy);
+      ctx.stroke();
+    } else if (a.annotation_type === "TEXT_NOTE") {
+      ctx.fillText(a.text || "\u{1F4CC}", xAt(a.p1_time), y(a.p1_price));
+    }
+    ctx.lineWidth = 1;
+  });
 }
 
 // ------------------------------------------------------------------ router

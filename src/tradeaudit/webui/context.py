@@ -9,6 +9,8 @@ from tradeaudit.infrastructure.repositories.settings_repository import SettingsR
 from tradeaudit.infrastructure.repositories.trade_repository import TradeRepository
 from tradeaudit.infrastructure.repositories.strategy_repository import StrategyRepository
 from tradeaudit.infrastructure.repositories.trade_event_repository import TradeEventRepository
+from tradeaudit.infrastructure.repositories.trade_note_repository import TradeNoteRepository
+from tradeaudit.infrastructure.repositories.annotation_repository import AnnotationRepository
 from tradeaudit.infrastructure.mt5.connection_service import MT5ConnectionService
 from tradeaudit.infrastructure.mt5.candle_reader import MT5CandleReader
 from tradeaudit.app.services.sync_service import SyncService
@@ -18,6 +20,7 @@ from tradeaudit.app.services.backup_service import BackupService
 from tradeaudit.app.services.trade_chart_service import TradeChartService
 from tradeaudit.app.services.quant_research_analyzer import QuantResearchAnalyzer
 from tradeaudit.app.services.report_generator import MarkdownReportGenerator
+from tradeaudit.app.services.trade_journal_service import TradeJournalService
 
 
 class AppContext:
@@ -33,6 +36,8 @@ class AppContext:
         self.trade_repo = TradeRepository(db_manager)
         self.strategy_repo = StrategyRepository(db_manager)
         self.trade_event_repo = TradeEventRepository(db_manager)
+        self.trade_note_repo = TradeNoteRepository(db_manager)
+        self.annotation_repo = AnnotationRepository(db_manager)
 
         self.strategy_service = StrategyService(self.strategy_repo, self.trade_repo)
         self.sync_service = SyncService(trade_repo=self.trade_repo)
@@ -48,6 +53,10 @@ class AppContext:
         )
         self.quant_analyzer = QuantResearchAnalyzer()
         self.report_generator = MarkdownReportGenerator(app_version=settings.app_version)
+        self.journal_service = TradeJournalService(
+            trade_note_repo=self.trade_note_repo,
+            annotation_repo=self.annotation_repo
+        )
 
     def current_login(self) -> int:
         saved = self.settings_repo.load_mt5_settings()

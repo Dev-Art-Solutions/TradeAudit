@@ -2,8 +2,11 @@
 FastAPI backend for the TradeAudit web UI. Wraps the existing, already-tested
 service/domain/infrastructure layers - no business logic lives here.
 """
+import base64
 import logging
 import secrets
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +18,7 @@ from pydantic import BaseModel
 from tradeaudit.app.exceptions import MT5Error, CredentialStoreError
 from tradeaudit.domain.models import MT5Settings, Strategy
 from tradeaudit.domain.candles import TimeFrame
+from tradeaudit.domain.annotations import ChartAnnotation, AnnotationType, TradeJournalNote
 from tradeaudit.app.services.performance_analyzer import PerformanceAnalyzer
 from tradeaudit.app.services.breakdown_analyzer import BreakdownAnalyzer
 from tradeaudit.app.services.strategy_trader_comparator import StrategyTraderComparator
@@ -54,6 +58,33 @@ class StrategyPayload(BaseModel):
 
 class AssignStrategyPayload(BaseModel):
     strategy_id: Optional[int] = None
+
+
+class JournalNotePayload(BaseModel):
+    setup_name: str = ""
+    rating: str = "A"
+    pre_trade_thesis: str = ""
+    post_trade_review: str = ""
+    lessons_learned: str = ""
+    mistakes_identified: list[str] = []
+    checklist_data: dict[str, bool] = {}
+
+
+class AnnotationPayload(BaseModel):
+    id: Optional[int] = None
+    timeframe: str = "M15"
+    annotation_type: str = "TREND_LINE"
+    p1_time: Optional[str] = None
+    p1_price: float = 0.0
+    p2_time: Optional[str] = None
+    p2_price: float = 0.0
+    color: str = "#58a6ff"
+    line_width: int = 2
+    text: str = ""
+
+
+class ScreenshotPayload(BaseModel):
+    image_base64: str
 
 
 def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
@@ -328,6 +359,83 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         candles = ctx.trade_chart_service.get_candles_for_trade(trade, timeframe=tf)
         overlay = ctx.trade_chart_service.build_overlay(trade)
         return {"candles": to_jsonable(candles), "overlay": to_jsonable(overlay)}
+
+    # ------------------------------------------------------------ journal & annotations
+
+    def _parse_iso(value: Optional[str]):
+        if not value:
+            return None
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+    @app.get("/api/trades/{trade_id}/journal")
+    def get_journal_note(trade_id: int):
+        return to_jsonable(ctx.journal_service.get_or_create_note(trade_id))
+
+    @app.post("/api/trades/{trade_id}/journal")
+    def save_journal_note(trade_id: int, payload: JournalNotePayload):
+        note = ctx.journal_service.get_or_create_note(trade_id)
+        note.setup_name = payload.setup_name
+        note.rating = payload.rating
+        note.pre_trade_thesis = payload.pre_trade_thesis
+        note.post_trade_review = payload.post_trade_review
+        note.lessons_learned = payload.lessons_learned
+        note.mistakes_identified = payload.mistakes_identified
+        note.checklist_data = payload.checklist_data
+        note.updated_at = datetime.now(timezone.utc)
+        saved = ctx.journal_service.save_note(note)
+        return to_jsonable(saved)
+
+    @app.get("/api/trades/{trade_id}/annotations")
+    def list_annotations(trade_id: int, timeframe: Optional[str] = None):
+        return [to_jsonable(a) for a in ctx.journal_service.get_annotations(trade_id, timeframe)]
+
+    @app.post("/api/trades/{trade_id}/annotations")
+    def create_annotation(trade_id: int, payload: AnnotationPayload):
+        try:
+            ann_type = AnnotationType(payload.annotation_type)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Unknown annotation_type: {payload.annotation_type}")
+        annotation = ChartAnnotation(
+            id=payload.id,
+            trade_id=trade_id,
+            timeframe=payload.timeframe,
+            annotation_type=ann_type,
+            p1_time=_parse_iso(payload.p1_time),
+            p1_price=payload.p1_price,
+            p2_time=_parse_iso(payload.p2_time),
+            p2_price=payload.p2_price,
+            color=payload.color,
+            line_width=payload.line_width,
+            text=payload.text,
+        )
+        saved = ctx.journal_service.save_annotation(annotation)
+        return to_jsonable(saved)
+
+    @app.delete("/api/annotations/{annotation_id}")
+    def delete_annotation(annotation_id: int):
+        ok = ctx.journal_service.delete_annotation(annotation_id)
+        return {"ok": ok}
+
+    @app.delete("/api/trades/{trade_id}/annotations")
+    def clear_annotations(trade_id: int, timeframe: Optional[str] = None):
+        count = ctx.journal_service.clear_annotations(trade_id, timeframe)
+        return {"cleared": count}
+
+    @app.post("/api/trades/{trade_id}/screenshot")
+    def save_screenshot(trade_id: int, payload: ScreenshotPayload):
+        try:
+            header, encoded = payload.image_base64.split(",", 1) if "," in payload.image_base64 else ("", payload.image_base64)
+            image_bytes = base64.b64decode(encoded)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid image data.")
+
+        ctx.settings.screenshots_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"trade_{trade_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.png"
+        out_path = ctx.settings.screenshots_dir / filename
+        out_path.write_bytes(image_bytes)
+
+        note = ctx.journal_service.attach_screenshot_to_trade(trade_id, str(out_path))
+        return {"path": str(out_path), "note": to_jsonable(note)}
 
     # ------------------------------------------------------------------ SPA
 
