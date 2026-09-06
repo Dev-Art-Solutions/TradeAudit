@@ -174,6 +174,43 @@ def test_trade_chart_zoom_pan_and_shape_tools(page, live_server, seeded_trade):
     assert page.evaluate("TC.annotations.map(a => a.annotation_type)") == ["RECTANGLE_ZONE", "ARROW_UP"]
 
 
+def test_trade_chart_eraser_deletes_only_the_clicked_annotation(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#trade-chart")
+    page.wait_for_selector("#tc-trade", timeout=10000)
+    page.wait_for_timeout(1000)
+
+    canvas = page.locator("#tc-canvas")
+    box = canvas.bounding_box()
+    ray_point = (box["x"] + box["width"] * 0.2, box["y"] + box["height"] * 0.3)
+    arrow_point = (box["x"] + box["width"] * 0.7, box["y"] + box["height"] * 0.6)
+
+    page.click('[data-draw="HORIZONTAL_RAY"]')
+    page.mouse.click(*ray_point)
+    page.wait_for_timeout(150)
+    page.click('[data-draw="ARROW_DOWN"]')
+    page.mouse.click(*arrow_point)
+    page.wait_for_timeout(150)
+    assert page.evaluate("TC.annotations.length") == 2
+
+    # Erasing the arrow must leave the ray in place.
+    page.click('[data-draw="ERASER"]')
+    page.mouse.click(*arrow_point)
+    page.wait_for_timeout(300)
+    remaining = page.evaluate("TC.annotations.map(a => a.annotation_type)")
+    assert remaining == ["HORIZONTAL_RAY"]
+
+    # A click far from anything must not delete the survivor.
+    page.mouse.click(box["x"] + box["width"] * 0.95, box["y"] + box["height"] * 0.95)
+    page.wait_for_timeout(200)
+    assert page.evaluate("TC.annotations.length") == 1
+
+    # Reload to confirm the delete was persisted, not just removed client-side.
+    page.reload()
+    page.wait_for_selector("#tc-trade", timeout=10000)
+    page.wait_for_timeout(1000)
+    assert page.evaluate("TC.annotations.length") == 1
+
+
 def test_trade_chart_copy_image_to_clipboard(page, live_server, seeded_trade):
     """
     The one remaining Qt-only gap in docs/LEGACY_UI_STATUS.md when this test

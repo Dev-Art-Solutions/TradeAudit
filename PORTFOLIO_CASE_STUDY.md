@@ -136,7 +136,7 @@ release pipeline.
 
 ## 6. Validation
 
-196 automated tests (185 unit + a Playwright-driven browser end-to-end
+197 automated tests (185 unit + a Playwright-driven browser end-to-end
 suite covering the actual rendered UI, not just the API) run in CI across
 Python 3.11–3.13. Beyond the test suite, the sync/aggregation/analytics
 pipeline and every backend fix listed above were verified against a real

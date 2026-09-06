@@ -823,7 +823,9 @@ const DRAW_TOOLS = [
   { type: "ARROW_UP", label: "\u2b06\ufe0f Arrow Up" },
   { type: "ARROW_DOWN", label: "\u2b07\ufe0f Arrow Down" },
   { type: "TEXT_NOTE", label: "\u{1F4DD} Note" },
+  { type: "ERASER", label: "\u{1F9F9} Eraser" },
 ];
+const HIT_TOLERANCE_PX = 8;
 
 async function viewTradeChart() {
   await loadTrades();
@@ -1058,9 +1060,60 @@ function setDrawMode(type) {
   document.querySelectorAll("[data-draw]").forEach((b) => b.classList.toggle("btn-primary", b.dataset.draw === TC.drawMode));
   const hint = document.getElementById("tc-drawhint");
   if (!TC.drawMode) { hint.textContent = ""; return; }
+  if (TC.drawMode === "ERASER") { hint.textContent = "Click an existing annotation to erase just that one."; return; }
   hint.textContent = ONE_CLICK_TOOLS.has(TC.drawMode)
     ? "Click on the chart to place it."
     : "Click two points on the chart to draw.";
+}
+
+// ------------------------------------------------------------- eraser (per-annotation hit test)
+
+function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq === 0 ? 0 : ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+function annotationHitDistance(a, px, py) {
+  const g = TC.geom;
+  if (a.annotation_type === "TREND_LINE") {
+    return pointToSegmentDistance(px, py, g.timeToX(a.p1_time), g.priceToY(a.p1_price), g.timeToX(a.p2_time), g.priceToY(a.p2_price));
+  }
+  if (a.annotation_type === "HORIZONTAL_RAY") {
+    const x1 = g.timeToX(a.p1_time);
+    if (px < x1 - HIT_TOLERANCE_PX) return Infinity;
+    return Math.abs(py - g.priceToY(a.p1_price));
+  }
+  if (a.annotation_type === "RECTANGLE_ZONE") {
+    const x1 = g.timeToX(a.p1_time), x2 = g.timeToX(a.p2_time);
+    const y1 = g.priceToY(a.p1_price), y2 = g.priceToY(a.p2_price);
+    const inside = px >= Math.min(x1, x2) - HIT_TOLERANCE_PX && px <= Math.max(x1, x2) + HIT_TOLERANCE_PX
+      && py >= Math.min(y1, y2) - HIT_TOLERANCE_PX && py <= Math.max(y1, y2) + HIT_TOLERANCE_PX;
+    return inside ? 0 : Infinity;
+  }
+  // ARROW_UP, ARROW_DOWN, TEXT_NOTE: distance to the anchor point
+  return Math.hypot(px - g.timeToX(a.p1_time), py - g.priceToY(a.p1_price));
+}
+
+function findAnnotationAt(px, py) {
+  if (!TC.geom) return null;
+  let best = null, bestDist = HIT_TOLERANCE_PX;
+  for (const a of TC.annotations) {
+    const dist = annotationHitDistance(a, px, py);
+    if (dist < bestDist) { bestDist = dist; best = a; }
+  }
+  return best;
+}
+
+async function deleteAnnotationById(id) {
+  try {
+    await api(`/annotations/${id}`, { method: "DELETE" });
+    TC.annotations = TC.annotations.filter((a) => a.id !== id);
+    renderTradeChart();
+    showTransientBanner("Annotation erased.", true);
+  } catch (e) { showTransientBanner(e.message, false); }
 }
 
 async function onCanvasClick(evt) {
@@ -1068,6 +1121,14 @@ async function onCanvasClick(evt) {
   if (!TC.drawMode || !TC.geom) return;
   const rect = evt.target.getBoundingClientRect();
   const x = evt.clientX - rect.left, y = evt.clientY - rect.top;
+
+  if (TC.drawMode === "ERASER") {
+    const hit = findAnnotationAt(x, y);
+    if (hit) await deleteAnnotationById(hit.id);
+    else showTransientBanner("No annotation there - click closer to a line or shape.", false);
+    return;
+  }
+
   const point = { time: TC.geom.timeAt(x), price: TC.geom.priceAt(y) };
 
   if (ONE_CLICK_TOOLS.has(TC.drawMode)) {
@@ -1186,7 +1247,7 @@ function drawCandles(canvas, candles, overlay, annotations) {
     const idx = Math.max(0, Math.min(candles.length - 1, Math.floor(px / cw)));
     return candles[idx].timestamp;
   };
-  TC.geom = { priceAt, timeAt, cw };
+  TC.geom = { priceAt, timeAt, cw, timeToX: xAt, priceToY: y };
 
   candles.forEach((c, i) => {
     const x = i * cw + cw / 2;

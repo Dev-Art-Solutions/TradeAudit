@@ -31,17 +31,16 @@ a bug fixed once is fixed for both.
 - Quant & Risk (Monte Carlo, Risk of Ruin, rolling window stability)
 - Trade Chart: candlestick rendering, bar-by-bar replay with speed control,
   all six annotation types (trendline, horizontal ray, rectangle zone,
-  arrow up/down, text note), scroll-to-zoom and drag-to-pan, 1-click
+  arrow up/down, text note) with a click-to-erase eraser tool for
+  removing one at a time, scroll-to-zoom and drag-to-pan, 1-click
   screenshot with a separate "Copy Image" to clipboard, and a trade
   journal (setup name, grade, thesis, review, lessons learned)
 
 ## Qt-only (not yet ported to the web UI)
 
-- **Eraser tool** for removing a single annotation by clicking it directly
-  on the chart. The web UI only offers "Clear Drawings" (clears every
-  annotation for the loaded trade/timeframe at once) plus per-annotation
-  delete via the API (`DELETE /api/annotations/{id}`), which isn't wired
-  to a chart-click gesture yet.
+None remaining. The three gaps this document used to track (annotation
+tool coverage, chart zoom/pan, and per-annotation erase) have all closed —
+see "Is removing Qt safe right now?" below.
 
 ## Web-UI-only
 
@@ -57,16 +56,17 @@ a bug fixed once is fixed for both.
 
 ## Is removing Qt safe right now?
 
-**One small gap left.** Annotation tools, chart zoom/pan, and
-clipboard-image-copy (via the Clipboard API's `ClipboardItem`, verified
-with a real clipboard read-back in `tests/e2e/test_ui_flows.py`, not just
-"no error thrown") are all now at parity. The one remaining difference is
-an eraser-by-click gesture for removing a single annotation directly on
-the chart (today: "Clear Drawings" wipes everything, or a per-annotation
-delete via the API with no UI gesture bound to it). Once that closes,
-`--legacy-qt` and `src/tradeaudit/ui/` can be removed along with
-`PySide6`/`pytest-qt` from the dependency list — nothing else in the
-codebase depends on Qt being present.
+**Yes, on feature grounds.** Every gap this document tracked (annotation
+tool coverage, chart zoom/pan, clipboard-image-copy, and per-annotation
+erase) is closed and covered by a real Playwright test that verifies the
+actual behavior (a persisted delete after reload, a real clipboard
+read-back, a hit-test that only erases the clicked shape) — not just that
+a button exists. Removing `--legacy-qt`, `src/tradeaudit/ui/`, and the
+`PySide6`/`pytest-qt` dependencies is a reasonable next step whenever
+that's wanted; nothing else in the codebase depends on Qt being present.
+It hasn't been done automatically here because removing a whole UI +
+dependency is a decision worth a deliberate yes, not a side effect of
+closing the last parity gap.
 
 ## Tests that only exist because of Qt
 

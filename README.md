@@ -93,7 +93,7 @@ real MT5 trade history.
 ![Trade Chart Replay](docs/images/03-trade-chart-replay.png)
 
 ### 🎨 6. Chart Annotations, 1-Click Screenshots & Trade Review
-- **Drawing Tools:** Trendlines, horizontal rays, rectangle zones, directional arrows, and text notes — anchored to price and timestamp, persisted per trade/timeframe.
+- **Drawing Tools:** Trendlines, horizontal rays, rectangle zones, directional arrows, and text notes — anchored to price and timestamp, persisted per trade/timeframe, with a click-to-erase tool for removing one at a time.
 - **1-Click Screenshot Capture:** Chart snapshots saved directly to disk and attached to the trade's journal entry, or copied straight to the clipboard.
 - **Trade Review:** Pre-trade thesis, post-trade review, execution grading (A+ through F), and lessons learned.
 
