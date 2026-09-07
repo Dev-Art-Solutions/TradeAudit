@@ -151,22 +151,6 @@ flowchart TD
 
 ---
 
-## 📥 Download
-
-Prebuilt Windows installers and portable ZIPs are published on the
-[**Releases**](https://github.com/Dev-Art-Solutions/TradeAudit/releases)
-page for every tagged version — no Python install required. Grab
-`TradeAudit-Setup-vX.Y.Z.exe` (installer) or `TradeAudit-vX.Y.Z-win64-portable.zip`
-(extract and run).
-
-> The installer isn't code-signed yet, so Windows SmartScreen will show an
-> "unrecognized publisher" prompt on first run — click **More info → Run
-> anyway**. This is a known, tracked limitation, not a sign of a
-> compromised build; the CI/release pipeline that produced it is public
-> and auditable in this repository.
-
----
-
 ## 🚀 Quick Start (from source)
 
 ### Prerequisites
@@ -198,9 +182,9 @@ python -m tradeaudit
 
 ## 🧪 Running Tests
 
-185 unit tests plus a Playwright-driven browser end-to-end suite that
-drives the actual rendered web UI (not just the API), all running in CI
-across Python 3.11–3.13:
+The project includes a comprehensive unit test suite and Playwright-driven
+browser end-to-end tests that exercise the rendered local web UI, with both
+running in CI across supported Python versions:
 
 ```bash
 pytest tests/unit          # fast, no browser required
