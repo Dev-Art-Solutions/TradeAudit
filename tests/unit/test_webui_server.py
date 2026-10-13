@@ -202,3 +202,29 @@ def test_live_journal_without_account(client):
     res = client.get("/api/live-journal/positions").json()
     assert res["status"] == "Configure MT5 settings first"
     assert res["positions"] == []
+
+
+def test_assign_strategy_and_emotion_and_csv_export(client, existing_trade_id):
+    strat = client.post("/api/strategies", json={"name": "TrendFollowing"}).json()
+    strat_id = strat["id"]
+
+    assign_res = client.post(f"/api/trades/{existing_trade_id}/assign-strategy", json={"strategy_id": strat_id})
+    assert assign_res.status_code == 200
+    assert assign_res.json()["ok"] is True
+    assert assign_res.json()["trade"]["strategy_id"] == strat_id
+
+    emotion_res = client.post(f"/api/trades/{existing_trade_id}/emotion", json={
+        "emotion_tag": "CALM",
+        "behavior_notes": "Well planned trade."
+    })
+    assert emotion_res.status_code == 200
+    assert emotion_res.json()["ok"] is True
+
+    behavior_res = client.post("/api/behavior/analyze")
+    assert behavior_res.status_code == 200
+    assert "flags" in behavior_res.json()
+
+    csv_res = client.get("/api/trades/export-csv")
+    assert csv_res.status_code == 200
+    assert "text/csv" in csv_res.headers.get("content-type", "")
+    assert "EURUSD" in csv_res.text

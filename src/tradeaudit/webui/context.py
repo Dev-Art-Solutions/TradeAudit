@@ -21,6 +21,7 @@ from tradeaudit.app.services.trade_chart_service import TradeChartService
 from tradeaudit.app.services.quant_research_analyzer import QuantResearchAnalyzer
 from tradeaudit.app.services.report_generator import MarkdownReportGenerator
 from tradeaudit.app.services.trade_journal_service import TradeJournalService
+from tradeaudit.app.services.behavior_service import BehaviorService
 
 
 class AppContext:
@@ -56,6 +57,10 @@ class AppContext:
         self.journal_service = TradeJournalService(
             trade_note_repo=self.trade_note_repo,
             annotation_repo=self.annotation_repo
+        )
+        self.behavior_service = BehaviorService(
+            trade_repository=self.trade_repo,
+            strategy_service=self.strategy_service
         )
 
     def current_login(self) -> int:

@@ -3,6 +3,8 @@ FastAPI backend for the TradeAudit web UI. Wraps the existing, already-tested
 service/domain/infrastructure layers - no business logic lives here.
 """
 import base64
+import csv
+import io
 import logging
 import secrets
 import uuid
@@ -17,6 +19,7 @@ from pydantic import BaseModel
 
 from tradeaudit.app.exceptions import MT5Error, CredentialStoreError
 from tradeaudit.domain.models import MT5Settings, Strategy
+from tradeaudit.infrastructure.database.models import TradeModel
 from tradeaudit.domain.candles import TimeFrame
 from tradeaudit.domain.annotations import ChartAnnotation, AnnotationType, TradeJournalNote
 from tradeaudit.app.services.performance_analyzer import PerformanceAnalyzer
@@ -58,6 +61,11 @@ class StrategyPayload(BaseModel):
 
 class AssignStrategyPayload(BaseModel):
     strategy_id: Optional[int] = None
+
+
+class TradeEmotionPayload(BaseModel):
+    emotion_tag: Optional[str] = None
+    behavior_notes: Optional[str] = None
 
 
 class JournalNotePayload(BaseModel):
@@ -109,7 +117,13 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         return await call_next(request)
 
     def closed_trades():
-        trades = ctx.trade_repo.get_trades(ctx.current_login())
+        login = ctx.current_login()
+        trades = ctx.trade_repo.get_trades(login)
+        if not trades and not login:
+            with ctx.db_manager.session_scope() as session:
+                first = session.query(TradeModel.account_id).first()
+                if first:
+                    trades = ctx.trade_repo.get_trades(first[0])
         return trades, [t for t in trades if t.status == "CLOSED"]
 
     # ---------------------------------------------------------------- state
@@ -204,6 +218,12 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
                 account_info = None
 
         result = ctx.sync_service.sync_account_history(account_id=saved.login, account_info=account_info)
+        if result.success:
+            try:
+                ctx.strategy_service.reevaluate_account_compliance(saved.login)
+                ctx.behavior_service.run_behavior_analysis_for_account(saved.login)
+            except Exception as e:
+                logger.warning("Post-sync compliance/behavior evaluation warning: %s", e)
         return to_jsonable(result)
 
     @app.post("/api/backup")
@@ -235,6 +255,40 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         trades, _ = closed_trades()
         return [to_jsonable(t) for t in trades]
 
+    @app.get("/api/trades/export-csv")
+    def export_trades_csv():
+        trades, _ = closed_trades()
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "ID", "Position ID", "Symbol", "Direction", "Volume",
+            "Open Time", "Close Time", "Open Price", "Close Price",
+            "Initial SL", "Initial TP", "Profit", "Swap", "Commission",
+            "Realized R", "Status", "Compliance Status", "Emotion Tag",
+            "Strategy ID", "Behavior Notes"
+        ])
+        for t in trades:
+            writer.writerow([
+                t.id, t.position_id, t.symbol, t.direction, t.volume,
+                t.open_time.isoformat() if t.open_time else "",
+                t.close_time.isoformat() if t.close_time else "",
+                t.open_price, t.close_price if t.close_price is not None else "",
+                t.initial_sl if t.initial_sl is not None else "",
+                t.initial_tp if t.initial_tp is not None else "",
+                t.profit, t.swap, t.commission,
+                t.realized_r if t.realized_r is not None else "",
+                t.status, t.compliance_status or "",
+                t.emotion_tag or "", t.strategy_id if t.strategy_id is not None else "",
+                t.behavior_notes or ""
+            ])
+        csv_data = output.getvalue()
+        login = ctx.current_login() or "history"
+        return Response(
+            content=csv_data,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="tradeaudit_{login}_{datetime.now().strftime("%Y%m%d")}.csv"'}
+        )
+
     @app.get("/api/trades/{trade_id}")
     def get_trade(trade_id: int):
         trades, _ = closed_trades()
@@ -245,10 +299,38 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
 
     @app.post("/api/trades/{trade_id}/assign-strategy")
     def assign_strategy(trade_id: int, payload: AssignStrategyPayload):
-        ctx.strategy_service.assign_strategy_to_trade(
-            account_id=ctx.current_login(), trade_id=trade_id, strategy_id=payload.strategy_id
+        account_id = ctx.current_login()
+        if not account_id:
+            with ctx.db_manager.session_scope() as session:
+                tm = session.query(TradeModel).filter(TradeModel.id == trade_id).first()
+                if tm:
+                    account_id = tm.account_id
+        trade = ctx.strategy_service.assign_strategy_to_trade(
+            account_id=account_id, trade_id=trade_id, strategy_id=payload.strategy_id
         )
-        return {"ok": True}
+        return {"ok": True, "trade": to_jsonable(trade)}
+
+    @app.post("/api/trades/{trade_id}/emotion")
+    def update_trade_emotion(trade_id: int, payload: TradeEmotionPayload):
+        ok = ctx.behavior_service.update_emotion_tag(
+            trade_id=trade_id,
+            emotion_tag=payload.emotion_tag,
+            behavior_notes=payload.behavior_notes,
+        )
+        return {"ok": ok}
+
+    @app.post("/api/behavior/analyze")
+    def run_behavior_analysis():
+        account_id = ctx.current_login()
+        if not account_id:
+            with ctx.db_manager.session_scope() as session:
+                first = session.query(TradeModel.account_id).first()
+                if first:
+                    account_id = first[0]
+        if not account_id:
+            return {"flags": {}}
+        flags_map = ctx.behavior_service.run_behavior_analysis_for_account(account_id)
+        return {"flags": {str(k): to_jsonable(v) for k, v in flags_map.items()}}
 
     # ----------------------------------------------------------- dashboard
 

@@ -26,7 +26,26 @@ const PAGE_SUB = {
   settings: "MetaTrader 5 connection & storage",
 };
 
-let state = { route: "dashboard", trades: [], strategies: [], api: null, hasAccount: false };
+let state = {
+  route: "dashboard",
+  trades: [],
+  strategies: [],
+  api: null,
+  hasAccount: false,
+  selectedTradeId: null,
+  tradeFilter: {
+    search: "",
+    direction: "ALL",
+    outcome: "ALL",
+    strategyId: "ALL",
+    compliance: "ALL",
+    emotion: "ALL",
+  },
+};
+
+async function loadStrategies() {
+  try { state.strategies = await apiGet("/strategies"); } catch (e) { state.strategies = []; }
+}
 
 function onboardingBannerHtml() {
   if (state.hasAccount) return "";
@@ -234,18 +253,86 @@ async function viewDashboard() {
 // ------------------------------------------------------------------ trades
 
 async function viewTrades() {
+  await Promise.all([loadTrades(), loadStrategies()]);
+  const stratsOptions = state.strategies.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
   content().innerHTML = `
     ${onboardingBannerHtml()}
     <div class="toolbar">
       <div class="chip" id="trades-count-chip">Loading…</div>
       <div class="right">
+        <button class="btn" id="btn-export-csv" title="Export trade history to CSV">📥 Export CSV</button>
+        <button class="btn" id="btn-analyze-behavior" title="Run revenge trading, FOMO and overtrading detection">🧠 Analyze Behavior</button>
         <button class="btn btn-primary" id="btn-sync"><span id="sync-spinner"></span> Sync History</button>
       </div>
+    </div>
+    <div class="filter-toolbar">
+      <div class="search-box">
+        <input type="text" id="trades-search" placeholder="🔍 Search symbol, comments, notes..." value="${esc(state.tradeFilter.search)}" />
+      </div>
+      <select id="filter-dir" class="filter-select">
+        <option value="ALL">All Directions</option>
+        <option value="BUY" ${state.tradeFilter.direction === "BUY" ? "selected" : ""}>BUY</option>
+        <option value="SELL" ${state.tradeFilter.direction === "SELL" ? "selected" : ""}>SELL</option>
+      </select>
+      <select id="filter-outcome" class="filter-select">
+        <option value="ALL">All Outcomes</option>
+        <option value="WIN" ${state.tradeFilter.outcome === "WIN" ? "selected" : ""}>Wins</option>
+        <option value="LOSS" ${state.tradeFilter.outcome === "LOSS" ? "selected" : ""}>Losses</option>
+        <option value="BE" ${state.tradeFilter.outcome === "BE" ? "selected" : ""}>Breakeven</option>
+      </select>
+      <select id="filter-strat" class="filter-select">
+        <option value="ALL">All Strategies</option>
+        <option value="NONE" ${state.tradeFilter.strategyId === "NONE" ? "selected" : ""}>No Strategy</option>
+        ${stratsOptions}
+      </select>
+      <select id="filter-comp" class="filter-select">
+        <option value="ALL">All Compliance</option>
+        <option value="COMPLIANT" ${state.tradeFilter.compliance === "COMPLIANT" ? "selected" : ""}>Compliant</option>
+        <option value="DEVIATION" ${state.tradeFilter.compliance === "DEVIATION" ? "selected" : ""}>Deviation</option>
+        <option value="UNCHECKED" ${state.tradeFilter.compliance === "UNCHECKED" ? "selected" : ""}>Unchecked</option>
+      </select>
+      <select id="filter-emotion" class="filter-select">
+        <option value="ALL">All Emotions</option>
+        <option value="CALM" ${state.tradeFilter.emotion === "CALM" ? "selected" : ""}>😌 Calm</option>
+        <option value="FOMO" ${state.tradeFilter.emotion === "FOMO" ? "selected" : ""}>⚡ FOMO</option>
+        <option value="REVENGE" ${state.tradeFilter.emotion === "REVENGE" ? "selected" : ""}>🔥 Revenge</option>
+        <option value="GREED" ${state.tradeFilter.emotion === "GREED" ? "selected" : ""}>🤑 Greed</option>
+        <option value="FEAR" ${state.tradeFilter.emotion === "FEAR" ? "selected" : ""}>😨 Fear</option>
+        <option value="BOREDOM" ${state.tradeFilter.emotion === "BOREDOM" ? "selected" : ""}>🥱 Boredom</option>
+      </select>
     </div>
     <div id="trades-body"></div>
   `;
   document.getElementById("btn-sync").addEventListener("click", doSync);
-  await loadTrades();
+  document.getElementById("btn-export-csv").addEventListener("click", doExportCsv);
+  document.getElementById("btn-analyze-behavior").addEventListener("click", doAnalyzeBehavior);
+
+  const searchInput = document.getElementById("trades-search");
+  searchInput.addEventListener("input", (e) => {
+    state.tradeFilter.search = e.target.value;
+    renderTradesTable();
+  });
+  document.getElementById("filter-dir").addEventListener("change", (e) => {
+    state.tradeFilter.direction = e.target.value;
+    renderTradesTable();
+  });
+  document.getElementById("filter-outcome").addEventListener("change", (e) => {
+    state.tradeFilter.outcome = e.target.value;
+    renderTradesTable();
+  });
+  document.getElementById("filter-strat").addEventListener("change", (e) => {
+    state.tradeFilter.strategyId = e.target.value;
+    renderTradesTable();
+  });
+  document.getElementById("filter-comp").addEventListener("change", (e) => {
+    state.tradeFilter.compliance = e.target.value;
+    renderTradesTable();
+  });
+  document.getElementById("filter-emotion").addEventListener("change", (e) => {
+    state.tradeFilter.emotion = e.target.value;
+    renderTradesTable();
+  });
+
   renderTradesTable();
 }
 
@@ -258,37 +345,177 @@ async function loadTrades() {
   try { state.trades = await apiGet("/trades"); } catch (e) { state.trades = []; }
 }
 
+function getFilteredTrades() {
+  const f = state.tradeFilter;
+  return state.trades.filter((t) => {
+    if (f.direction !== "ALL" && t.direction !== f.direction) return false;
+    const pl = t.net_profit ?? t.profit ?? 0;
+    if (f.outcome === "WIN" && pl <= 0) return false;
+    if (f.outcome === "LOSS" && pl >= 0) return false;
+    if (f.outcome === "BE" && pl !== 0) return false;
+    if (f.compliance !== "ALL" && (t.compliance_status || "UNCHECKED").toUpperCase() !== f.compliance) return false;
+    if (f.emotion !== "ALL" && (t.emotion_tag || "").toUpperCase() !== f.emotion) return false;
+    if (f.strategyId === "NONE" && t.strategy_id) return false;
+    if (f.strategyId !== "ALL" && f.strategyId !== "NONE" && String(t.strategy_id) !== String(f.strategyId)) return false;
+    if (f.search) {
+      const q = f.search.toLowerCase();
+      const sym = (t.symbol || "").toLowerCase();
+      const notes = (t.behavior_notes || "").toLowerCase();
+      if (!sym.includes(q) && !notes.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
 function renderTradesTable() {
   const body = document.getElementById("trades-body");
   if (!body) return;
-  updateTradesCountChip();
+  const filtered = getFilteredTrades().sort((a, b) => new Date(b.open_time) - new Date(a.open_time));
+  const chip = document.getElementById("trades-count-chip");
+  if (chip) chip.textContent = `${filtered.length} trades shown (${state.trades.length} total)`;
+
   if (!state.trades.length) {
     body.innerHTML = emptyState("\u{1F4CA}", "No trades synced yet", "Configure your MT5 account in Settings, connect, then click Sync History above.");
     return;
   }
-  const rows = state.trades.slice().sort((a, b) => new Date(b.open_time) - new Date(a.open_time)).map((t) => `
-    <tr>
-      <td>${esc(t.symbol)}</td>
-      <td><span class="pill ${t.direction === "BUY" ? "buy" : "sell"}">${t.direction}</span></td>
-      <td class="mono">${fmtVolume(t.volume)}</td>
-      <td class="mono">${fmtDate(t.open_time)}</td>
-      <td class="mono">${fmtDate(t.close_time)}</td>
-      <td class="mono">${fmtNum(t.open_price, 5)}</td>
-      <td class="mono">${t.close_price !== null ? fmtNum(t.close_price, 5) : "\u2014"}</td>
-      <td class="mono ${signClass(t.net_profit ?? t.profit)}">${fmtNum(t.profit)}</td>
-      <td class="mono">${t.realized_r !== null ? fmtNum(t.realized_r, 2) : "\u2014"}</td>
-      <td><span class="pill ${(t.compliance_status || "unchecked").toLowerCase()}">${t.compliance_status || "UNCHECKED"}</span></td>
-    </tr>`).join("");
+  if (!filtered.length) {
+    body.innerHTML = emptyState("\u{1F50D}", "No trades match filters", "Try clearing your search query or adjusting filter dropdowns.");
+    return;
+  }
+
+  const EMOTIONS = ["", "CALM", "FOMO", "REVENGE", "GREED", "FEAR", "BOREDOM"];
+  const rows = filtered.map((t) => {
+    const stratOptions = `<option value="">None</option>` + state.strategies.map((s) =>
+      `<option value="${s.id}" ${t.strategy_id === s.id ? "selected" : ""}>${esc(s.name)}</option>`
+    ).join("");
+
+    const emotionOptions = EMOTIONS.map((em) =>
+      `<option value="${em}" ${(t.emotion_tag || "").toUpperCase() === em ? "selected" : ""}>${em ? esc(em) : "None"}</option>`
+    ).join("");
+
+    const flagsHtml = (t.auto_behavior_flags || []).map((fl) =>
+      `<span class="pill flag" title="${esc(fl.reason || '')}">\u26A0\uFE0F ${esc((fl.flag_type || '').replace(/_/g, ' '))}</span>`
+    ).join("");
+
+    const compStatus = (t.compliance_status || "unchecked").toLowerCase();
+    const compTitle = t.deviation_reason ? `Deviation: ${esc(t.deviation_reason)}` : "";
+
+    return `
+      <tr class="clickable-row">
+        <td><b>${esc(t.symbol)}</b></td>
+        <td><span class="pill ${t.direction === "BUY" ? "buy" : "sell"}">${t.direction}</span></td>
+        <td class="mono">${fmtVolume(t.volume)}</td>
+        <td class="mono">${fmtDate(t.open_time)}</td>
+        <td class="mono">${fmtDate(t.close_time)}</td>
+        <td class="mono">${fmtNum(t.open_price, 5)}</td>
+        <td class="mono">${t.close_price !== null ? fmtNum(t.close_price, 5) : "\u2014"}</td>
+        <td class="mono ${signClass(t.net_profit ?? t.profit)}"><b>${fmtNum(t.profit)}</b></td>
+        <td class="mono">${t.realized_r !== null ? fmtNum(t.realized_r, 2) : "\u2014"}</td>
+        <td>
+          <select class="table-select" data-assign-strat="${t.id}" title="Assign strategy to trade">${stratOptions}</select>
+        </td>
+        <td>
+          <span class="pill ${compStatus}" title="${compTitle}">${t.compliance_status || "UNCHECKED"}</span>
+        </td>
+        <td>
+          <select class="table-select" data-assign-emotion="${t.id}" title="Tag trade emotion">${emotionOptions}</select>
+        </td>
+        <td>${flagsHtml || '<span class="text-dim" style="font-size:11px">\u2014</span>'}</td>
+        <td>
+          <button class="btn btn-sm btn-primary" data-jump-chart="${t.id}" title="Open candlestick replay for this trade">\u{1F4C8} Chart</button>
+        </td>
+      </tr>`;
+  }).join("");
+
   body.innerHTML = `
     <div class="table-wrap">
       <table>
         <thead><tr>
           <th>Symbol</th><th>Dir</th><th>Volume</th><th>Open Time</th><th>Close Time</th>
-          <th>Open Px</th><th>Close Px</th><th>P/L</th><th>R</th><th>Compliance</th>
+          <th>Open Px</th><th>Close Px</th><th>P/L</th><th>R</th><th>Strategy</th><th>Compliance</th>
+          <th>Emotion</th><th>Discipline Flags</th><th>Action</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+
+  body.querySelectorAll("[data-assign-strat]").forEach((sel) => {
+    sel.addEventListener("change", async () => {
+      const tradeId = parseInt(sel.dataset.assignStrat, 10);
+      const val = sel.value ? parseInt(sel.value, 10) : null;
+      try {
+        const res = await apiPost(`/trades/${tradeId}/assign-strategy`, { strategy_id: val });
+        const idx = state.trades.findIndex((x) => x.id === tradeId);
+        if (idx !== -1 && res.trade) state.trades[idx] = res.trade;
+        renderTradesTable();
+        showTransientBanner("Strategy assigned. Compliance updated.", true);
+      } catch (err) {
+        showTransientBanner(err.message, false);
+      }
+    });
+  });
+
+  body.querySelectorAll("[data-assign-emotion]").forEach((sel) => {
+    sel.addEventListener("change", async () => {
+      const tradeId = parseInt(sel.dataset.assignEmotion, 10);
+      const val = sel.value || null;
+      try {
+        await apiPost(`/trades/${tradeId}/emotion`, { emotion_tag: val });
+        const tr = state.trades.find((x) => x.id === tradeId);
+        if (tr) tr.emotion_tag = val;
+        renderTradesTable();
+        showTransientBanner("Emotion tag updated.", true);
+      } catch (err) {
+        showTransientBanner(err.message, false);
+      }
+    });
+  });
+
+  body.querySelectorAll("[data-jump-chart]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const tradeId = btn.dataset.jumpChart;
+      state.selectedTradeId = tradeId;
+      navigate("trade-chart");
+    });
+  });
+}
+
+async function doExportCsv() {
+  try {
+    const res = await fetch("/api/trades/export-csv", {
+      headers: { "X-TradeAudit-Token": window.__TA_TOKEN__ || "" },
+    });
+    if (!res.ok) throw new Error("Export failed: " + res.statusText);
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tradeaudit_trades_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    showTransientBanner("\u2705 Trades exported to CSV successfully.", true);
+  } catch (e) {
+    showTransientBanner("Could not export CSV: " + e.message, false);
+  }
+}
+
+async function doAnalyzeBehavior() {
+  const btn = document.getElementById("btn-analyze-behavior");
+  if (btn) btn.disabled = true;
+  try {
+    const res = await apiPost("/behavior/analyze", {});
+    await loadTrades();
+    renderTradesTable();
+    const totalFlags = Object.values(res.flags || {}).reduce((acc, fls) => acc + (fls ? fls.length : 0), 0);
+    showTransientBanner(`\u{1F9E0} Behavioral analysis complete: ${totalFlags} issue(s) identified.`, true);
+  } catch (e) {
+    showTransientBanner("Behavior analysis failed: " + e.message, false);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function doSync() {
@@ -308,6 +535,7 @@ async function doSync() {
     if (spinner) spinner.className = "";
   }
 }
+
 
 function showTransientBanner(message, ok) {
   const existing = document.getElementById("transient-banner");
@@ -828,10 +1056,11 @@ const DRAW_TOOLS = [
 const HIT_TOLERANCE_PX = 8;
 
 async function viewTradeChart() {
-  await loadTrades();
+  await Promise.all([loadTrades(), loadStrategies()]);
+  const defaultSelectedId = state.selectedTradeId || (state.trades[0] ? state.trades[0].id : null);
   const options = state.trades
     .slice().sort((a, b) => new Date(b.open_time) - new Date(a.open_time))
-    .map((t) => `<option value="${t.id}">${esc(t.symbol)} ${t.direction} \u00b7 ${fmtDate(t.open_time)}</option>`).join("");
+    .map((t) => `<option value="${t.id}" ${String(t.id) === String(defaultSelectedId) ? "selected" : ""}>${esc(t.symbol)} ${t.direction} \u00b7 ${fmtDate(t.open_time)}</option>`).join("");
   content().innerHTML = `
     <div class="card">
       <div class="toolbar">
@@ -865,17 +1094,37 @@ async function viewTradeChart() {
       </div>
 
       <canvas id="tc-canvas" style="width:100%;height:420px;display:block;cursor:crosshair"></canvas>
+      <div id="tc-ohlc-bar" class="chart-ohlc-bar">Hover over the chart to inspect bar prices</div>
       <div id="tc-overlay" class="kpi-sub" style="margin-top:12px"></div>
       <div class="kpi-sub text-dim" style="margin-top:4px">Scroll to zoom · drag to pan the chart.</div>
       <div id="tc-drawhint" class="kpi-sub text-dim" style="margin-top:4px"></div>
     </div>
 
     <div class="card">
-      <div class="card-title">\u{1F4D3} Trade Journal</div>
+      <div class="card-title">\u{1F4D3} Trade Journal & Classification</div>
       <div class="grid grid-2">
         <div class="field"><label>Setup Name</label><input type="text" id="tj-setup" /></div>
         <div class="field"><label>Grade</label>
           <select id="tj-rating">${["A+","A","B","C","D","F"].map((g) => `<option>${g}</option>`).join("")}</select>
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <div class="field"><label>Strategy</label>
+          <select id="tj-strategy">
+            <option value="">None</option>
+            ${state.strategies.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field"><label>Emotion Tag</label>
+          <select id="tj-emotion">
+            <option value="">None</option>
+            <option value="CALM">😌 Calm</option>
+            <option value="FOMO">⚡ FOMO</option>
+            <option value="REVENGE">🔥 Revenge</option>
+            <option value="GREED">🤑 Greed</option>
+            <option value="FEAR">😨 Fear</option>
+            <option value="BOREDOM">🥱 Boredom</option>
+          </select>
         </div>
       </div>
       <div class="field"><label>Pre-Trade Thesis</label><textarea id="tj-pre" rows="2"></textarea></div>
@@ -905,6 +1154,10 @@ async function viewTradeChart() {
   const canvas = document.getElementById("tc-canvas");
   canvas.addEventListener("mousedown", onCanvasMouseDown);
   canvas.addEventListener("mousemove", onCanvasMouseMove);
+  canvas.addEventListener("mouseleave", () => {
+    const el = document.getElementById("tc-ohlc-bar");
+    if (el) el.textContent = "Hover over the chart to inspect bar prices";
+  });
   window.addEventListener("mouseup", onCanvasMouseUp);
   canvas.addEventListener("click", onCanvasClick);
   canvas.addEventListener("wheel", onCanvasWheel, { passive: false });
@@ -945,6 +1198,14 @@ async function loadTradeChart() {
   document.getElementById("tj-lessons").value = note ? note.lessons_learned : "";
   document.getElementById("tj-screenshots").textContent = note && note.screenshot_paths.length
     ? `${note.screenshot_paths.length} screenshot(s) saved to disk.` : "No screenshots saved yet.";
+
+  const currTrade = state.trades.find((x) => String(x.id) === String(tradeId));
+  if (currTrade) {
+    const sEl = document.getElementById("tj-strategy");
+    if (sEl) sEl.value = currTrade.strategy_id || "";
+    const eEl = document.getElementById("tj-emotion");
+    if (eEl) eEl.value = (currTrade.emotion_tag || "").toUpperCase();
+  }
 }
 
 function getViewSize(revealedLen) {
@@ -1001,6 +1262,29 @@ function onCanvasMouseDown(evt) {
 }
 
 function onCanvasMouseMove(evt) {
+  if (TC.geom && TC.candles && TC.candles.length) {
+    const rect = evt.target.getBoundingClientRect();
+    const x = evt.clientX - rect.left;
+    const revealed = TC.candles.slice(0, TC.visibleCount);
+    const viewSize = getViewSize(revealed.length);
+    clampViewStart(revealed.length, viewSize);
+    const visible = revealed.slice(TC.viewStart, TC.viewStart + viewSize);
+    const cw = rect.width / (visible.length || 1);
+    const idx = Math.floor(x / cw);
+    const ohlcEl = document.getElementById("tc-ohlc-bar");
+    if (ohlcEl && visible[idx]) {
+      const c = visible[idx];
+      const diff = c.close - c.open;
+      const pct = c.open ? ((diff / c.open) * 100).toFixed(2) : "0.00";
+      const changeStr = diff >= 0 ? `+${fmtNum(diff, 5)} (+${pct}%)` : `${fmtNum(diff, 5)} (${pct}%)`;
+      const color = diff >= 0 ? "var(--color-win)" : "var(--color-loss)";
+      ohlcEl.innerHTML = `<span><strong>${c.timestamp.replace("T", " ").slice(0, 19)}</strong></span> \u00b7 ` +
+        `O: <strong>${fmtNum(c.open, 5)}</strong> \u00b7 H: <strong>${fmtNum(c.high, 5)}</strong> \u00b7 ` +
+        `L: <strong>${fmtNum(c.low, 5)}</strong> \u00b7 C: <strong>${fmtNum(c.close, 5)}</strong> \u00b7 ` +
+        `<span style="color:${color}">\u0394 ${changeStr}</span>`;
+    }
+  }
+
   if (!TC.dragging || !TC.geom) return;
   const dx = evt.clientX - TC.dragStartX;
   if (Math.abs(dx) > 3) TC.dragMoved = true;
@@ -1208,6 +1492,32 @@ async function saveJournalEntry() {
       mistakes_identified: [],
       checklist_data: {},
     });
+
+    const stratEl = document.getElementById("tj-strategy");
+    const emoEl = document.getElementById("tj-emotion");
+    if (stratEl || emoEl) {
+      const stratVal = stratEl ? stratEl.value : "";
+      const emoVal = emoEl ? emoEl.value : "";
+
+      try {
+        await apiPost(`/trades/${TC.tradeId}/assign-strategy`, {
+          strategy_id: stratVal ? parseInt(stratVal, 10) : null,
+        });
+      } catch (err) { /* ignore if unconfigured */ }
+
+      try {
+        await apiPost(`/trades/${TC.tradeId}/emotion`, {
+          emotion_tag: emoVal || null,
+        });
+      } catch (err) { /* ignore if unconfigured */ }
+
+      const t = state.trades.find((x) => String(x.id) === String(TC.tradeId));
+      if (t) {
+        t.strategy_id = stratVal ? parseInt(stratVal, 10) : null;
+        t.emotion_tag = emoVal || null;
+      }
+    }
+
     showTransientBanner("Journal entry saved.", true);
   } catch (e) { showTransientBanner(e.message, false); }
 }
