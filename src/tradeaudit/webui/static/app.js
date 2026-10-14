@@ -40,6 +40,10 @@ let state = {
     strategyId: "ALL",
     compliance: "ALL",
     emotion: "ALL",
+    dateRange: "ALL",
+    symbol: "ALL",
+    sortCol: "open_time",
+    sortDir: "desc",
   },
 };
 
@@ -255,6 +259,9 @@ async function viewDashboard() {
 async function viewTrades() {
   await Promise.all([loadTrades(), loadStrategies()]);
   const stratsOptions = state.strategies.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
+  const symbols = [...new Set(state.trades.map((t) => t.symbol).filter(Boolean))].sort();
+  const symbolOptions = symbols.map((s) => `<option value="${esc(s)}" ${state.tradeFilter.symbol === s ? "selected" : ""}>${esc(s)}</option>`).join("");
+
   content().innerHTML = `
     ${onboardingBannerHtml()}
     <div class="toolbar">
@@ -269,6 +276,17 @@ async function viewTrades() {
       <div class="search-box">
         <input type="text" id="trades-search" placeholder="🔍 Search symbol, comments, notes..." value="${esc(state.tradeFilter.search)}" />
       </div>
+      <select id="filter-symbol" class="filter-select" title="Filter by symbol">
+        <option value="ALL">All Symbols</option>
+        ${symbolOptions}
+      </select>
+      <select id="filter-date" class="filter-select" title="Filter by date range">
+        <option value="ALL" ${state.tradeFilter.dateRange === "ALL" ? "selected" : ""}>All Dates</option>
+        <option value="TODAY" ${state.tradeFilter.dateRange === "TODAY" ? "selected" : ""}>Today</option>
+        <option value="WEEK" ${state.tradeFilter.dateRange === "WEEK" ? "selected" : ""}>Last 7 Days</option>
+        <option value="30D" ${state.tradeFilter.dateRange === "30D" ? "selected" : ""}>Last 30 Days</option>
+        <option value="MONTH" ${state.tradeFilter.dateRange === "MONTH" ? "selected" : ""}>This Month</option>
+      </select>
       <select id="filter-dir" class="filter-select">
         <option value="ALL">All Directions</option>
         <option value="BUY" ${state.tradeFilter.direction === "BUY" ? "selected" : ""}>BUY</option>
@@ -310,6 +328,14 @@ async function viewTrades() {
   const searchInput = document.getElementById("trades-search");
   searchInput.addEventListener("input", (e) => {
     state.tradeFilter.search = e.target.value;
+    renderTradesTable();
+  });
+  document.getElementById("filter-symbol").addEventListener("change", (e) => {
+    state.tradeFilter.symbol = e.target.value;
+    renderTradesTable();
+  });
+  document.getElementById("filter-date").addEventListener("change", (e) => {
+    state.tradeFilter.dateRange = e.target.value;
     renderTradesTable();
   });
   document.getElementById("filter-dir").addEventListener("change", (e) => {
@@ -355,6 +381,20 @@ function getFilteredTrades() {
     if (f.outcome === "BE" && pl !== 0) return false;
     if (f.compliance !== "ALL" && (t.compliance_status || "UNCHECKED").toUpperCase() !== f.compliance) return false;
     if (f.emotion !== "ALL" && (t.emotion_tag || "").toUpperCase() !== f.emotion) return false;
+    if (f.symbol && f.symbol !== "ALL" && t.symbol !== f.symbol) return false;
+    if (f.dateRange && f.dateRange !== "ALL") {
+      const now = new Date();
+      const tDate = new Date(t.close_time || t.open_time);
+      if (f.dateRange === "TODAY") {
+        if (tDate.toDateString() !== now.toDateString()) return false;
+      } else if (f.dateRange === "WEEK") {
+        if (now - tDate > 7 * 86400000) return false;
+      } else if (f.dateRange === "30D") {
+        if (now - tDate > 30 * 86400000) return false;
+      } else if (f.dateRange === "MONTH") {
+        if (tDate.getFullYear() !== now.getFullYear() || tDate.getMonth() !== now.getMonth()) return false;
+      }
+    }
     if (f.strategyId === "NONE" && t.strategy_id) return false;
     if (f.strategyId !== "ALL" && f.strategyId !== "NONE" && String(t.strategy_id) !== String(f.strategyId)) return false;
     if (f.search) {
@@ -370,7 +410,24 @@ function getFilteredTrades() {
 function renderTradesTable() {
   const body = document.getElementById("trades-body");
   if (!body) return;
-  const filtered = getFilteredTrades().sort((a, b) => new Date(b.open_time) - new Date(a.open_time));
+
+  const filtered = getFilteredTrades();
+  const sortCol = state.tradeFilter.sortCol || "open_time";
+  const sortDir = state.tradeFilter.sortDir === "asc" ? 1 : -1;
+
+  filtered.sort((a, b) => {
+    let va = a[sortCol], vb = b[sortCol];
+    if (sortCol === "profit") { va = a.net_profit ?? a.profit ?? 0; vb = b.net_profit ?? b.profit ?? 0; }
+    if (sortCol === "open_time" || sortCol === "close_time") {
+      va = va ? new Date(va).getTime() : 0;
+      vb = vb ? new Date(vb).getTime() : 0;
+    }
+    if (va === null || va === undefined) return 1;
+    if (vb === null || vb === undefined) return -1;
+    if (typeof va === "string") return sortDir * va.localeCompare(vb);
+    return sortDir * (va - vb);
+  });
+
   const chip = document.getElementById("trades-count-chip");
   if (chip) chip.textContent = `${filtered.length} trades shown (${state.trades.length} total)`;
 
@@ -381,6 +438,50 @@ function renderTradesTable() {
   if (!filtered.length) {
     body.innerHTML = emptyState("\u{1F50D}", "No trades match filters", "Try clearing your search query or adjusting filter dropdowns.");
     return;
+  }
+
+  // Calculate live KPI summary for filtered trades
+  let winCount = 0, totalPl = 0, totalR = 0, grossWin = 0, grossLoss = 0, countR = 0;
+  for (const t of filtered) {
+    const pl = t.net_profit ?? t.profit ?? 0;
+    totalPl += pl;
+    if (pl > 0) { winCount++; grossWin += pl; }
+    else if (pl < 0) { grossLoss += Math.abs(pl); }
+    if (t.realized_r !== null && t.realized_r !== undefined) {
+      totalR += t.realized_r;
+      countR++;
+    }
+  }
+  const winRate = filtered.length > 0 ? (winCount / filtered.length) * 100 : 0;
+  const profitFactor = grossLoss > 0 ? (grossWin / grossLoss) : (grossWin > 0 ? 99.9 : 0);
+  const hasActiveFilters = state.tradeFilter.direction !== "ALL" ||
+    state.tradeFilter.outcome !== "ALL" ||
+    state.tradeFilter.strategyId !== "ALL" ||
+    state.tradeFilter.compliance !== "ALL" ||
+    state.tradeFilter.emotion !== "ALL" ||
+    state.tradeFilter.symbol !== "ALL" ||
+    state.tradeFilter.dateRange !== "ALL" ||
+    Boolean(state.tradeFilter.search);
+
+  const kpiStripHtml = `
+    <div class="trades-kpi-strip">
+      <div class="kpi-mini-card"><span class="kpi-mini-label">Filtered Trades:</span><b>${filtered.length}</b></div>
+      <div class="kpi-divider"></div>
+      <div class="kpi-mini-card"><span class="kpi-mini-label">Win Rate:</span><b>${winRate.toFixed(1)}%</b></div>
+      <div class="kpi-divider"></div>
+      <div class="kpi-mini-card"><span class="kpi-mini-label">Net P/L:</span><b class="${totalPl >= 0 ? 'win' : 'loss'}">${fmtNum(totalPl)}</b></div>
+      <div class="kpi-divider"></div>
+      <div class="kpi-mini-card"><span class="kpi-mini-label">Net Realized R:</span><b class="${totalR >= 0 ? 'win' : 'loss'}">${countR ? fmtNum(totalR, 2) + 'R' : '—'}</b></div>
+      <div class="kpi-divider"></div>
+      <div class="kpi-mini-card"><span class="kpi-mini-label">Profit Factor:</span><b>${profitFactor.toFixed(2)}</b></div>
+      ${hasActiveFilters ? '<div style="margin-left:auto"><button class="btn btn-sm" id="btn-clear-filters">✕ Clear Filters</button></div>' : ''}
+    </div>
+  `;
+
+  function sortHeader(label, col) {
+    const isActive = (state.tradeFilter.sortCol === col);
+    const arrow = isActive ? (state.tradeFilter.sortDir === "asc" ? " ▲" : " ▼") : "";
+    return `<th class="sortable-th" data-sort-col="${col}" title="Click to sort by ${label}">${label}<span class="sort-arrow">${arrow}</span></th>`;
   }
 
   const EMOTIONS = ["", "CALM", "FOMO", "REVENGE", "GREED", "FEAR", "BOREDOM"];
@@ -428,16 +529,77 @@ function renderTradesTable() {
   }).join("");
 
   body.innerHTML = `
+    ${kpiStripHtml}
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Symbol</th><th>Dir</th><th>Volume</th><th>Open Time</th><th>Close Time</th>
-          <th>Open Px</th><th>Close Px</th><th>P/L</th><th>R</th><th>Strategy</th><th>Compliance</th>
-          <th>Emotion</th><th>Discipline Flags</th><th>Action</th>
+          ${sortHeader("Symbol", "symbol")}
+          <th>Dir</th>
+          ${sortHeader("Volume", "volume")}
+          ${sortHeader("Open Time", "open_time")}
+          ${sortHeader("Close Time", "close_time")}
+          <th>Open Px</th>
+          <th>Close Px</th>
+          ${sortHeader("P/L", "profit")}
+          ${sortHeader("R", "realized_r")}
+          <th>Strategy</th>
+          <th>Compliance</th>
+          <th>Emotion</th>
+          <th>Discipline Flags</th>
+          <th>Action</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+
+  body.querySelectorAll(".sortable-th").forEach((th) => {
+    th.addEventListener("click", () => {
+      const col = th.dataset.sortCol;
+      if (state.tradeFilter.sortCol === col) {
+        state.tradeFilter.sortDir = state.tradeFilter.sortDir === "asc" ? "desc" : "asc";
+      } else {
+        state.tradeFilter.sortCol = col;
+        state.tradeFilter.sortDir = (col === "open_time" || col === "close_time" || col === "profit" || col === "realized_r") ? "desc" : "asc";
+      }
+      renderTradesTable();
+    });
+  });
+
+  const btnClearFilters = document.getElementById("btn-clear-filters");
+  if (btnClearFilters) {
+    btnClearFilters.addEventListener("click", () => {
+      state.tradeFilter = {
+        search: "",
+        direction: "ALL",
+        outcome: "ALL",
+        strategyId: "ALL",
+        compliance: "ALL",
+        emotion: "ALL",
+        dateRange: "ALL",
+        symbol: "ALL",
+        sortCol: "open_time",
+        sortDir: "desc",
+      };
+      const searchBox = document.getElementById("trades-search");
+      if (searchBox) searchBox.value = "";
+      const filterSym = document.getElementById("filter-symbol");
+      if (filterSym) filterSym.value = "ALL";
+      const filterDate = document.getElementById("filter-date");
+      if (filterDate) filterDate.value = "ALL";
+      const filterDir = document.getElementById("filter-dir");
+      if (filterDir) filterDir.value = "ALL";
+      const filterOut = document.getElementById("filter-outcome");
+      if (filterOut) filterOut.value = "ALL";
+      const filterStrat = document.getElementById("filter-strat");
+      if (filterStrat) filterStrat.value = "ALL";
+      const filterComp = document.getElementById("filter-comp");
+      if (filterComp) filterComp.value = "ALL";
+      const filterEmo = document.getElementById("filter-emotion");
+      if (filterEmo) filterEmo.value = "ALL";
+      renderTradesTable();
+      showTransientBanner("Filters reset to default.", true);
+    });
+  }
 
   body.querySelectorAll("[data-assign-strat]").forEach((sel) => {
     sel.addEventListener("change", async () => {
@@ -1032,17 +1194,38 @@ function renderRollingTable(rolling) {
 // ------------------------------------------------------------------ trade chart
 
 // TC holds all Trade Chart tab state: loaded data, replay playback, the
-// zoom/pan viewport into the revealed candles, and the pixel<->price/time
-// mapping from the last draw (needed for click-to-annotate).
+// zoom/pan viewport into the revealed candles, pixel<->price/time mapping,
+// active technical indicators (EMA, Volume), and cursor hover crosshairs.
 const TC = {
   tradeId: null, candles: [], overlay: null, annotations: [],
   visibleCount: 0, playing: false, timer: null, speed: 1,
   drawMode: null, pendingPoint: null, geom: null,
   viewStart: 0, viewSize: null, // null viewSize = show the whole revealed range (no zoom)
   dragging: false, dragStartX: 0, dragStartViewStart: 0, suppressNextClick: false,
+  hoverPoint: null,
+  indicators: {
+    ema20: true,
+    ema50: false,
+    volume: true,
+  },
+  ema20: [],
+  ema50: [],
 };
 
 const MIN_ZOOM_CANDLES = 8;
+
+function computeEMA(candles, period) {
+  if (!candles || !candles.length) return [];
+  const k = 2 / (period + 1);
+  const result = new Array(candles.length);
+  let prev = candles[0].close;
+  result[0] = prev;
+  for (let i = 1; i < candles.length; i++) {
+    prev = candles[i].close * k + prev * (1 - k);
+    result[i] = prev;
+  }
+  return result;
+}
 
 const DRAW_TOOLS = [
   { type: "TREND_LINE", label: "\u{1F4C8} Trendline" },
@@ -1071,8 +1254,8 @@ async function viewTradeChart() {
         </div>
       </div>
 
-      <div class="toolbar">
-        <div class="right">
+      <div class="toolbar" style="flex-wrap:wrap;gap:8px">
+        <div class="right" style="margin-right:auto">
           <button class="btn" id="tc-reset" title="Jump back to the start of the replay">\u23ee Reset</button>
           <button class="btn" id="tc-step-back" title="Step back one bar">\u23f4</button>
           <button class="btn btn-primary" id="tc-play">\u25b6 Play</button>
@@ -1084,9 +1267,16 @@ async function viewTradeChart() {
             <option value="4">4x</option>
           </select>
         </div>
+        <div class="indicator-toggles">
+          <button class="btn-toggle ${TC.indicators.ema20 ? 'active ema20' : ''}" id="tc-toggle-ema20" title="Toggle 20-period Exponential Moving Average"><span class="dot-indicator" style="background:#38bdf8"></span> EMA 20</button>
+          <button class="btn-toggle ${TC.indicators.ema50 ? 'active ema50' : ''}" id="tc-toggle-ema50" title="Toggle 50-period Exponential Moving Average"><span class="dot-indicator" style="background:#f59e0b"></span> EMA 50</button>
+          <button class="btn-toggle ${TC.indicators.volume ? 'active volume' : ''}" id="tc-toggle-vol" title="Toggle Volume histogram"><span class="dot-indicator" style="background:var(--win)"></span> Volume</button>
+        </div>
         <div class="right">
           ${DRAW_TOOLS.map((t) => `<button class="btn" data-draw="${t.type}">${t.label}</button>`).join("")}
           <button class="btn btn-danger" id="tc-clear-annotations">Clear Drawings</button>
+          <button class="btn" id="tc-zoom-in" title="Zoom in">+</button>
+          <button class="btn" id="tc-zoom-out" title="Zoom out">−</button>
           <button class="btn" id="tc-fit-zoom" title="Reset zoom/pan to show the whole revealed range">\u{1F50D} Fit</button>
           <button class="btn" id="tc-screenshot">\u{1F4F7} Screenshot</button>
           <button class="btn" id="tc-copy-clipboard">\u{1F4CB} Copy Image</button>
@@ -1096,7 +1286,7 @@ async function viewTradeChart() {
       <canvas id="tc-canvas" style="width:100%;height:420px;display:block;cursor:crosshair"></canvas>
       <div id="tc-ohlc-bar" class="chart-ohlc-bar">Hover over the chart to inspect bar prices</div>
       <div id="tc-overlay" class="kpi-sub" style="margin-top:12px"></div>
-      <div class="kpi-sub text-dim" style="margin-top:4px">Scroll to zoom · drag to pan the chart.</div>
+      <div class="kpi-sub text-dim" style="margin-top:4px">Scroll or use +/- to zoom · drag to pan · crosshairs and indicators active.</div>
       <div id="tc-drawhint" class="kpi-sub text-dim" style="margin-top:4px"></div>
     </div>
 
@@ -1148,15 +1338,47 @@ async function viewTradeChart() {
   document.querySelectorAll("[data-draw]").forEach((b) => b.addEventListener("click", () => setDrawMode(b.dataset.draw)));
   document.getElementById("tc-clear-annotations").addEventListener("click", clearAnnotations);
   document.getElementById("tc-fit-zoom").addEventListener("click", fitZoom);
+  document.getElementById("tc-zoom-in").addEventListener("click", () => zoomChart(1));
+  document.getElementById("tc-zoom-out").addEventListener("click", () => zoomChart(-1));
   document.getElementById("tc-screenshot").addEventListener("click", takeScreenshot);
   document.getElementById("tc-copy-clipboard").addEventListener("click", copyChartToClipboard);
+
+  const btnEma20 = document.getElementById("tc-toggle-ema20");
+  if (btnEma20) {
+    btnEma20.addEventListener("click", () => {
+      TC.indicators.ema20 = !TC.indicators.ema20;
+      btnEma20.classList.toggle("active", TC.indicators.ema20);
+      btnEma20.classList.toggle("ema20", TC.indicators.ema20);
+      renderTradeChart();
+    });
+  }
+  const btnEma50 = document.getElementById("tc-toggle-ema50");
+  if (btnEma50) {
+    btnEma50.addEventListener("click", () => {
+      TC.indicators.ema50 = !TC.indicators.ema50;
+      btnEma50.classList.toggle("active", TC.indicators.ema50);
+      btnEma50.classList.toggle("ema50", TC.indicators.ema50);
+      renderTradeChart();
+    });
+  }
+  const btnVol = document.getElementById("tc-toggle-vol");
+  if (btnVol) {
+    btnVol.addEventListener("click", () => {
+      TC.indicators.volume = !TC.indicators.volume;
+      btnVol.classList.toggle("active", TC.indicators.volume);
+      btnVol.classList.toggle("volume", TC.indicators.volume);
+      renderTradeChart();
+    });
+  }
 
   const canvas = document.getElementById("tc-canvas");
   canvas.addEventListener("mousedown", onCanvasMouseDown);
   canvas.addEventListener("mousemove", onCanvasMouseMove);
   canvas.addEventListener("mouseleave", () => {
+    TC.hoverPoint = null;
     const el = document.getElementById("tc-ohlc-bar");
     if (el) el.textContent = "Hover over the chart to inspect bar prices";
+    renderTradeChart();
   });
   window.addEventListener("mouseup", onCanvasMouseUp);
   canvas.addEventListener("click", onCanvasClick);
@@ -1178,9 +1400,12 @@ async function loadTradeChart() {
   catch (e) { showTransientBanner(e.message, false); return; }
   TC.candles = data.candles || [];
   TC.overlay = data.overlay;
+  TC.ema20 = computeEMA(TC.candles, 20);
+  TC.ema50 = computeEMA(TC.candles, 50);
   TC.visibleCount = TC.candles.length; // show the full chart by default; Reset scrubs back for replay
   TC.viewStart = 0;
   TC.viewSize = null; // fresh trade/timeframe always loads fully zoomed out
+  TC.hoverPoint = null;
   document.getElementById("tc-play").innerHTML = "\u25b6 Play";
   TC.playing = false;
 
@@ -1220,8 +1445,23 @@ function fitZoom() {
   renderTradeChart();
 }
 
+function zoomChart(step) {
+  if (!TC.candles || !TC.candles.length) return;
+  const revealed = TC.candles.slice(0, TC.visibleCount);
+  const oldViewSize = getViewSize(revealed.length);
+  const factor = step > 0 ? 0.75 : 1.33;
+  let newViewSize = Math.round(oldViewSize * factor);
+  newViewSize = Math.max(MIN_ZOOM_CANDLES, Math.min(revealed.length, newViewSize));
+  const centerAbs = TC.viewStart + oldViewSize / 2;
+  TC.viewSize = newViewSize >= revealed.length ? null : newViewSize;
+  TC.viewStart = Math.round(centerAbs - newViewSize / 2);
+  clampViewStart(revealed.length, newViewSize);
+  renderTradeChart();
+}
+
 function renderTradeChart() {
   const o = TC.overlay;
+  if (!o) return;
   document.getElementById("tc-overlay").innerHTML =
     `Entry ${fmtNum(o.entry_price, 5)} \u00b7 Exit ${o.exit_price !== null ? fmtNum(o.exit_price, 5) : "\u2014"} \u00b7 ` +
     `SL ${o.initial_sl !== null ? fmtNum(o.initial_sl, 5) : "\u2014"} \u00b7 TP ${o.initial_tp !== null ? fmtNum(o.initial_tp, 5) : "\u2014"} \u00b7 ` +
@@ -1243,13 +1483,21 @@ function onCanvasWheel(evt) {
   const oldViewSize = getViewSize(revealed.length);
   const rect = evt.target.getBoundingClientRect();
   const cursorX = evt.clientX - rect.left;
+  const plotW = TC.geom.plotWidth || rect.width;
+  if (cursorX > plotW) return;
   const cursorIndexAbs = TC.viewStart + cursorX / TC.geom.cw;
-  const factor = evt.deltaY < 0 ? 0.85 : 1 / 0.85; // scroll up = zoom in
+
+  const normalizedDelta = Math.min(Math.max(evt.deltaY, -100), 100);
+  const factor = Math.exp(normalizedDelta * 0.0018);
   let newViewSize = Math.round(oldViewSize * factor);
+  if (newViewSize === oldViewSize) {
+    newViewSize = evt.deltaY < 0 ? oldViewSize - 1 : oldViewSize + 1;
+  }
   newViewSize = Math.max(MIN_ZOOM_CANDLES, Math.min(revealed.length, newViewSize));
-  const cursorRatio = cursorX / (rect.width || 1);
+  const cursorRatio = Math.max(0, Math.min(1, cursorX / plotW));
   TC.viewSize = newViewSize >= revealed.length ? null : newViewSize;
   TC.viewStart = Math.round(cursorIndexAbs - cursorRatio * newViewSize);
+  clampViewStart(revealed.length, newViewSize);
   renderTradeChart();
 }
 
@@ -1259,18 +1507,30 @@ function onCanvasMouseDown(evt) {
   TC.dragMoved = false;
   TC.dragStartX = evt.clientX;
   TC.dragStartViewStart = TC.viewStart;
+  const canvas = document.getElementById("tc-canvas");
+  if (canvas) canvas.style.cursor = "grabbing";
 }
 
 function onCanvasMouseMove(evt) {
+  const rect = evt.target.getBoundingClientRect();
+  const x = evt.clientX - rect.left;
+  const y = evt.clientY - rect.top;
+
   if (TC.geom && TC.candles && TC.candles.length) {
-    const rect = evt.target.getBoundingClientRect();
-    const x = evt.clientX - rect.left;
     const revealed = TC.candles.slice(0, TC.visibleCount);
     const viewSize = getViewSize(revealed.length);
     clampViewStart(revealed.length, viewSize);
     const visible = revealed.slice(TC.viewStart, TC.viewStart + viewSize);
-    const cw = rect.width / (visible.length || 1);
+    const plotW = TC.geom.plotWidth || rect.width;
+    const cw = plotW / (visible.length || 1);
     const idx = Math.floor(x / cw);
+
+    if (x >= 0 && x <= plotW && y >= 0 && y <= rect.height) {
+      TC.hoverPoint = { x, y };
+    } else {
+      TC.hoverPoint = null;
+    }
+
     const ohlcEl = document.getElementById("tc-ohlc-bar");
     if (ohlcEl && visible[idx]) {
       const c = visible[idx];
@@ -1278,26 +1538,35 @@ function onCanvasMouseMove(evt) {
       const pct = c.open ? ((diff / c.open) * 100).toFixed(2) : "0.00";
       const changeStr = diff >= 0 ? `+${fmtNum(diff, 5)} (+${pct}%)` : `${fmtNum(diff, 5)} (${pct}%)`;
       const color = diff >= 0 ? "var(--color-win)" : "var(--color-loss)";
+      const volStr = c.volume ? ` \u00b7 Vol: <strong>${c.volume.toLocaleString()}</strong>` : "";
       ohlcEl.innerHTML = `<span><strong>${c.timestamp.replace("T", " ").slice(0, 19)}</strong></span> \u00b7 ` +
         `O: <strong>${fmtNum(c.open, 5)}</strong> \u00b7 H: <strong>${fmtNum(c.high, 5)}</strong> \u00b7 ` +
         `L: <strong>${fmtNum(c.low, 5)}</strong> \u00b7 C: <strong>${fmtNum(c.close, 5)}</strong> \u00b7 ` +
-        `<span style="color:${color}">\u0394 ${changeStr}</span>`;
+        `<span style="color:${color}">\u0394 ${changeStr}</span>${volStr}`;
     }
   }
 
-  if (!TC.dragging || !TC.geom) return;
-  const dx = evt.clientX - TC.dragStartX;
-  if (Math.abs(dx) > 3) TC.dragMoved = true;
-  const revealed = TC.candles.slice(0, TC.visibleCount);
-  const viewSize = getViewSize(revealed.length);
-  TC.viewStart = TC.dragStartViewStart + Math.round(-dx / TC.geom.cw);
-  clampViewStart(revealed.length, viewSize);
-  renderTradeChart();
+  if (TC.dragging && TC.geom) {
+    const dx = evt.clientX - TC.dragStartX;
+    if (Math.abs(dx) > 3) TC.dragMoved = true;
+    const revealed = TC.candles.slice(0, TC.visibleCount);
+    const viewSize = getViewSize(revealed.length);
+    TC.viewStart = TC.dragStartViewStart + Math.round(-dx / TC.geom.cw);
+    clampViewStart(revealed.length, viewSize);
+    renderTradeChart();
+    return;
+  }
+
+  if (!TC.drawMode && !TC.dragging) {
+    renderTradeChart();
+  }
 }
 
 function onCanvasMouseUp() {
   if (TC.dragging && TC.dragMoved) TC.suppressNextClick = true;
   TC.dragging = false;
+  const canvas = document.getElementById("tc-canvas");
+  if (canvas) canvas.style.cursor = "crosshair";
 }
 
 // ------------------------------------------------------------- replay controls
@@ -1536,29 +1805,97 @@ function drawCandles(canvas, candles, overlay, annotations) {
     TC.geom = null;
     return;
   }
+
+  const priceScaleW = 68;
+  const pw = Math.max(100, w - priceScaleW);
+  const showVol = Boolean(TC.indicators && TC.indicators.volume);
+  const volH = showVol ? Math.min(75, Math.floor(h * 0.22)) : 0;
+  const chartH = h - volH;
+
   const highs = candles.map((c) => c.high), lows = candles.map((c) => c.low);
   let min = Math.min(...lows), max = Math.max(...highs);
-  if (overlay.initial_sl) { min = Math.min(min, overlay.initial_sl); max = Math.max(max, overlay.initial_sl); }
-  if (overlay.initial_tp) { min = Math.min(min, overlay.initial_tp); max = Math.max(max, overlay.initial_tp); }
+  if (overlay && overlay.initial_sl) { min = Math.min(min, overlay.initial_sl); max = Math.max(max, overlay.initial_sl); }
+  if (overlay && overlay.initial_tp) { min = Math.min(min, overlay.initial_tp); max = Math.max(max, overlay.initial_tp); }
   const pad = (max - min) * 0.08 || 0.0001;
   min -= pad; max += pad;
   const range = max - min;
-  const cw = w / candles.length;
-  const y = (price) => h - ((price - min) / range) * h;
-  const priceAt = (py) => min + ((h - py) / h) * range;
+  const cw = pw / candles.length;
+
+  const y = (price) => chartH - 12 - ((price - min) / range) * (chartH - 24);
+  const priceAt = (py) => min + ((chartH - 12 - py) / (chartH - 24)) * range;
   const timestamps = candles.map((c) => new Date(c.timestamp).getTime());
   const xAt = (isoTime) => {
     const t = new Date(isoTime).getTime();
     let idx = timestamps.findIndex((ct) => ct >= t);
     if (idx === -1) idx = timestamps.length - 1;
-    return idx * cw + cw / 2;
+    return Math.max(cw / 2, Math.min(pw - cw / 2, idx * cw + cw / 2));
   };
   const timeAt = (px) => {
     const idx = Math.max(0, Math.min(candles.length - 1, Math.floor(px / cw)));
     return candles[idx].timestamp;
   };
-  TC.geom = { priceAt, timeAt, cw, timeToX: xAt, priceToY: y };
+  TC.geom = { priceAt, timeAt, cw, timeToX: xAt, priceToY: y, plotWidth: pw };
 
+  // Draw Horizontal Gridlines & Price Scale Ticks
+  const gridCount = 5;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 4]);
+  ctx.font = "10.5px Cascadia Code, Consolas, monospace";
+  ctx.fillStyle = "#8b949e";
+  for (let g = 0; g <= gridCount; g++) {
+    const pVal = min + (range * g) / gridCount;
+    const yy = y(pVal);
+    if (yy >= 8 && yy <= chartH - 8) {
+      ctx.beginPath();
+      ctx.moveTo(0, yy);
+      ctx.lineTo(pw, yy);
+      ctx.stroke();
+      ctx.fillText(fmtNum(pVal, 5), pw + 6, yy + 3.5);
+    }
+  }
+  ctx.setLineDash([]);
+
+  // Draw Vertical Right Price Scale Separator
+  ctx.strokeStyle = "rgba(48, 54, 61, 0.65)";
+  ctx.beginPath();
+  ctx.moveTo(pw, 0);
+  ctx.lineTo(pw, h);
+  ctx.stroke();
+
+  // Draw Risk:Reward Zone Box (Shaded Profit & Risk Zones)
+  if (overlay && overlay.entry_price !== null && overlay.entry_price !== undefined) {
+    const entryX = xAt(overlay.entry_time);
+    let exitX = overlay.exit_time ? xAt(overlay.exit_time) : pw;
+    if (exitX <= entryX) exitX = Math.min(pw, entryX + cw * 6);
+    const boxW = Math.max(cw * 2, exitX - entryX);
+
+    // Target Profit Zone (Green)
+    if (overlay.initial_tp) {
+      const tpY = y(overlay.initial_tp);
+      const entY = y(overlay.entry_price);
+      const topY = Math.min(tpY, entY);
+      const zoneH = Math.max(2, Math.abs(tpY - entY));
+      ctx.fillStyle = "rgba(38, 166, 154, 0.10)";
+      ctx.fillRect(entryX, topY, boxW, zoneH);
+      ctx.strokeStyle = "rgba(38, 166, 154, 0.35)";
+      ctx.strokeRect(entryX, topY, boxW, zoneH);
+    }
+
+    // Stop Loss Zone (Red)
+    if (overlay.initial_sl) {
+      const slY = y(overlay.initial_sl);
+      const entY = y(overlay.entry_price);
+      const topY = Math.min(slY, entY);
+      const zoneH = Math.max(2, Math.abs(slY - entY));
+      ctx.fillStyle = "rgba(239, 83, 80, 0.10)";
+      ctx.fillRect(entryX, topY, boxW, zoneH);
+      ctx.strokeStyle = "rgba(239, 83, 80, 0.35)";
+      ctx.strokeRect(entryX, topY, boxW, zoneH);
+    }
+  }
+
+  // Draw Candlestick Bars
   candles.forEach((c, i) => {
     const x = i * cw + cw / 2;
     const up = c.close >= c.open;
@@ -1571,19 +1908,129 @@ function drawCandles(canvas, candles, overlay, annotations) {
     ctx.fillRect(x - cw * 0.35, bodyTop, cw * 0.7, bodyH);
   });
 
+  // Draw EMA Indicators
+  const startIdx = TC.viewStart || 0;
+  if (TC.indicators && TC.indicators.ema20 && TC.ema20 && TC.ema20.length) {
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < candles.length; i++) {
+      const val = TC.ema20[startIdx + i];
+      if (val === null || val === undefined) continue;
+      const ex = i * cw + cw / 2;
+      const ey = y(val);
+      if (!started) { ctx.moveTo(ex, ey); started = true; }
+      else { ctx.lineTo(ex, ey); }
+    }
+    ctx.stroke();
+  }
+
+  if (TC.indicators && TC.indicators.ema50 && TC.ema50 && TC.ema50.length) {
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < candles.length; i++) {
+      const val = TC.ema50[startIdx + i];
+      if (val === null || val === undefined) continue;
+      const ex = i * cw + cw / 2;
+      const ey = y(val);
+      if (!started) { ctx.moveTo(ex, ey); started = true; }
+      else { ctx.lineTo(ex, ey); }
+    }
+    ctx.stroke();
+  }
+
+  // Draw Volume Histogram Sub-Pane
+  if (showVol) {
+    ctx.strokeStyle = "rgba(48, 54, 61, 0.75)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, chartH);
+    ctx.lineTo(pw, chartH);
+    ctx.stroke();
+
+    ctx.fillStyle = "#8b949e";
+    ctx.font = "bold 9.5px Segoe UI";
+    ctx.fillText("VOLUME", 8, chartH + 14);
+
+    let maxV = 1;
+    for (const c of candles) {
+      if (c.volume && c.volume > maxV) maxV = c.volume;
+    }
+
+    candles.forEach((c, i) => {
+      const vol = c.volume || 0;
+      const x = i * cw + cw / 2;
+      const barH = Math.max(2, (vol / maxV) * (volH - 22));
+      const barY = h - barH - 4;
+      const up = c.close >= c.open;
+      ctx.fillStyle = up ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)";
+      ctx.fillRect(x - cw * 0.35, barY, cw * 0.7, barH);
+      ctx.strokeStyle = up ? "rgba(38, 166, 154, 0.85)" : "rgba(239, 83, 80, 0.85)";
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(x - cw * 0.35, barY, cw * 0.7, barH);
+    });
+  }
+
+  // Draw Entry & SL/TP Levels
   function hline(price, color, label) {
     if (price === null || price === undefined) return;
     const yy = y(price);
-    ctx.strokeStyle = color; ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(w, yy); ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, yy);
+    ctx.lineTo(pw, yy);
+    ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = color; ctx.font = "11px Segoe UI";
-    ctx.fillText(label, 4, yy - 4);
-  }
-  hline(overlay.entry_price, "#58a6ff", "Entry " + overlay.entry_price);
-  hline(overlay.initial_sl, "#ef5350", "SL");
-  hline(overlay.initial_tp, "#26a69a", "TP");
 
+    ctx.fillStyle = color;
+    ctx.fillRect(pw, yy - 8, priceScaleW, 16);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 9.5px Segoe UI, Cascadia Code, monospace";
+    ctx.fillText(label, pw + 4, yy + 3.5);
+  }
+
+  if (overlay) {
+    hline(overlay.entry_price, "#58a6ff", "Entry");
+    hline(overlay.initial_sl, "#ef5350", "SL");
+    hline(overlay.initial_tp, "#26a69a", "TP");
+
+    // Entry Marker Badge
+    if (overlay.entry_price !== null && overlay.entry_time) {
+      const ex = xAt(overlay.entry_time);
+      const ey = y(overlay.entry_price);
+      const isBuy = (overlay.direction || "").toUpperCase() === "BUY";
+      ctx.fillStyle = isBuy ? "#26a69a" : "#ef5350";
+      ctx.font = "bold 10px Segoe UI";
+      const badgeText = isBuy ? "▲ BUY" : "▼ SELL";
+      const bw = ctx.measureText(badgeText).width + 8;
+      const by = isBuy ? ey + 10 : ey - 22;
+      ctx.fillRect(ex - bw / 2, by, bw, 15);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(badgeText, ex - bw / 2 + 4, by + 11);
+    }
+
+    // Exit Marker Badge
+    if (overlay.exit_price !== null && overlay.exit_time) {
+      const xx = xAt(overlay.exit_time);
+      const xy = y(overlay.exit_price);
+      const isWin = (overlay.net_profit ?? 0) >= 0;
+      ctx.fillStyle = isWin ? "#26a69a" : "#ef5350";
+      ctx.font = "bold 10px Segoe UI";
+      const rText = overlay.realized_r !== null ? ` ${fmtNum(overlay.realized_r, 2)}R` : "";
+      const exitText = `✕ Exit${rText}`;
+      const xw = ctx.measureText(exitText).width + 8;
+      ctx.fillRect(xx - xw / 2, xy - 8, xw, 16);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(exitText, xx - xw / 2 + 4, xy + 4);
+    }
+  }
+
+  // Draw Annotations
   (annotations || []).forEach((a) => {
     ctx.strokeStyle = a.color || "#f59e0b";
     ctx.fillStyle = a.color || "#f59e0b";
@@ -1598,7 +2045,7 @@ function drawCandles(canvas, candles, overlay, annotations) {
       const yy = y(a.p1_price);
       ctx.beginPath();
       ctx.moveTo(xAt(a.p1_time), yy);
-      ctx.lineTo(w, yy);
+      ctx.lineTo(pw, yy);
       ctx.stroke();
     } else if (a.annotation_type === "RECTANGLE_ZONE") {
       const x1 = xAt(a.p1_time), x2 = xAt(a.p2_time);
@@ -1625,6 +2072,75 @@ function drawCandles(canvas, candles, overlay, annotations) {
     }
     ctx.lineWidth = 1;
   });
+
+  // Draw Legend Badges (Top-Left)
+  let legX = 12;
+  const lastBarIdx = candles.length - 1;
+  ctx.font = "bold 11px Segoe UI";
+  if (TC.indicators && TC.indicators.ema20 && TC.ema20 && candles[lastBarIdx]) {
+    const val = TC.ema20[startIdx + lastBarIdx];
+    if (val !== undefined && val !== null) {
+      ctx.fillStyle = "#38bdf8";
+      const txt = `EMA 20: ${fmtNum(val, 5)}`;
+      ctx.fillText(txt, legX, 20);
+      legX += ctx.measureText(txt).width + 16;
+    }
+  }
+  if (TC.indicators && TC.indicators.ema50 && TC.ema50 && candles[lastBarIdx]) {
+    const val = TC.ema50[startIdx + lastBarIdx];
+    if (val !== undefined && val !== null) {
+      ctx.fillStyle = "#f59e0b";
+      const txt = `EMA 50: ${fmtNum(val, 5)}`;
+      ctx.fillText(txt, legX, 20);
+      legX += ctx.measureText(txt).width + 16;
+    }
+  }
+
+  // Draw Interactive Crosshair & Cursor Badges
+  if (TC.hoverPoint && TC.hoverPoint.x >= 0 && TC.hoverPoint.x <= pw && TC.hoverPoint.y >= 0 && TC.hoverPoint.y <= h) {
+    const hx = TC.hoverPoint.x;
+    const hy = TC.hoverPoint.y;
+
+    ctx.strokeStyle = "rgba(139, 148, 158, 0.55)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+
+    // Vertical line
+    ctx.beginPath();
+    ctx.moveTo(hx, 0);
+    ctx.lineTo(hx, h);
+    ctx.stroke();
+
+    // Horizontal line
+    ctx.beginPath();
+    ctx.moveTo(0, hy);
+    ctx.lineTo(pw, hy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Price Badge on Right Scale
+    if (hy <= chartH) {
+      const curP = priceAt(hy);
+      const pStr = fmtNum(curP, 5);
+      ctx.font = "bold 10px Cascadia Code, Consolas, monospace";
+      ctx.fillStyle = "#1f6feb";
+      ctx.fillRect(pw, hy - 9, priceScaleW, 18);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(pStr, pw + 5, hy + 3.5);
+    }
+
+    // Time Badge at Bottom X-Scale
+    const curT = timeAt(hx);
+    if (curT) {
+      const tStr = curT.replace("T", " ").slice(5, 16);
+      ctx.font = "10px Cascadia Code, Consolas, monospace";
+      const tw = ctx.measureText(tStr).width;
+      ctx.fillStyle = "#30363d";
+      ctx.fillRect(hx - tw / 2 - 4, h - 18, tw + 8, 16);
+      ctx.fillStyle = "#e6edf3";
+      ctx.fillText(tStr, hx - tw / 2, h - 6);
+    }
+  }
 }
 
 // ------------------------------------------------------------------ router
