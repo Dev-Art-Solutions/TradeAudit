@@ -175,22 +175,65 @@ function drawLineChart(canvas, series, opts = {}) {
     ctx.fillText("Not enough data yet", 12, h / 2);
     return;
   }
-  const pad = 8;
+  const pad = 12;
   const min = Math.min(...series, 0);
   const max = Math.max(...series, 0);
   const range = (max - min) || 1;
   const zeroY = h - pad - ((0 - min) / range) * (h - pad * 2);
 
-  ctx.strokeStyle = "#21262d";
+  // Zero reference baseline
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
   ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
   ctx.beginPath();
   ctx.moveTo(0, zeroY);
   ctx.lineTo(w, zeroY);
   ctx.stroke();
+  ctx.setLineDash([]);
 
+  // Peak high-water mark line if positive
+  if (max > 0) {
+    const peakY = h - pad - ((max - min) / range) * (h - pad * 2);
+    ctx.strokeStyle = "rgba(38, 166, 154, 0.25)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, peakY);
+    ctx.lineTo(w, peakY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(38, 166, 154, 0.7)";
+    ctx.font = "9px Cascadia Code, Consolas, monospace";
+    ctx.fillText(`Peak ${fmtNum(max, 2)}`, w - 75, peakY - 3);
+  }
+
+  const mainColor = opts.color || "#58a6ff";
+
+  // Gradient area fill under equity curve
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  if (mainColor === "#26a69a" || mainColor.includes("166")) {
+    grad.addColorStop(0, "rgba(38, 166, 154, 0.22)");
+    grad.addColorStop(1, "rgba(38, 166, 154, 0.0)");
+  } else {
+    grad.addColorStop(0, "rgba(88, 166, 255, 0.22)");
+    grad.addColorStop(1, "rgba(88, 166, 255, 0.0)");
+  }
   ctx.beginPath();
-  ctx.strokeStyle = opts.color || "#58a6ff";
-  ctx.lineWidth = 2;
+  ctx.moveTo(0, zeroY);
+  series.forEach((v, i) => {
+    const x = (i / (series.length - 1)) * w;
+    const y = h - pad - ((v - min) / range) * (h - pad * 2);
+    ctx.lineTo(x, y);
+  });
+  ctx.lineTo(w, zeroY);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Equity curve line
+  ctx.beginPath();
+  ctx.strokeStyle = mainColor;
+  ctx.lineWidth = 2.2;
   series.forEach((v, i) => {
     const x = (i / (series.length - 1)) * w;
     const y = h - pad - ((v - min) / range) * (h - pad * 2);
@@ -198,11 +241,12 @@ function drawLineChart(canvas, series, opts = {}) {
   });
   ctx.stroke();
 
+  // Last point indicator badge
   const last = series[series.length - 1];
   const lx = w, ly = h - pad - ((last - min) / range) * (h - pad * 2);
-  ctx.fillStyle = opts.color || "#58a6ff";
+  ctx.fillStyle = mainColor;
   ctx.beginPath();
-  ctx.arc(lx - 4, ly, 3, 0, Math.PI * 2);
+  ctx.arc(lx - 4, ly, 3.5, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -1195,7 +1239,7 @@ function renderRollingTable(rolling) {
 
 // TC holds all Trade Chart tab state: loaded data, replay playback, the
 // zoom/pan viewport into the revealed candles, pixel<->price/time mapping,
-// active technical indicators (EMA, Volume), and cursor hover crosshairs.
+// active technical indicators (EMA, Volume, VWAP, Bollinger, RSI), and crosshairs.
 const TC = {
   tradeId: null, candles: [], overlay: null, annotations: [],
   visibleCount: 0, playing: false, timer: null, speed: 1,
@@ -1207,9 +1251,15 @@ const TC = {
     ema20: true,
     ema50: false,
     volume: true,
+    vwap: false,
+    bollinger: false,
+    rsi: false,
   },
   ema20: [],
   ema50: [],
+  vwap: [],
+  bollinger: { upper: [], middle: [], lower: [] },
+  rsi: [],
 };
 
 const MIN_ZOOM_CANDLES = 8;
@@ -1225,6 +1275,74 @@ function computeEMA(candles, period) {
     result[i] = prev;
   }
   return result;
+}
+
+function computeVWAP(candles) {
+  if (!candles || !candles.length) return [];
+  let cumVol = 0;
+  let cumVolPrice = 0;
+  const result = new Array(candles.length);
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const vol = c.volume || 1;
+    const typicalPrice = (c.high + c.low + c.close) / 3;
+    cumVol += vol;
+    cumVolPrice += typicalPrice * vol;
+    result[i] = cumVolPrice / cumVol;
+  }
+  return result;
+}
+
+function computeBollingerBands(candles, period = 20, numStd = 2) {
+  if (!candles || !candles.length) return { upper: [], middle: [], lower: [] };
+  const upper = new Array(candles.length);
+  const middle = new Array(candles.length);
+  const lower = new Array(candles.length);
+
+  for (let i = 0; i < candles.length; i++) {
+    const start = Math.max(0, i - period + 1);
+    const window = candles.slice(start, i + 1);
+    const mean = window.reduce((sum, c) => sum + c.close, 0) / window.length;
+    const variance = window.reduce((sum, c) => sum + Math.pow(c.close - mean, 2), 0) / window.length;
+    const std = Math.sqrt(variance);
+    middle[i] = mean;
+    upper[i] = mean + numStd * std;
+    lower[i] = mean - numStd * std;
+  }
+  return { upper, middle, lower };
+}
+
+function computeRSI(candles, period = 14) {
+  if (!candles || candles.length < 2) return [];
+  const rsi = new Array(candles.length).fill(null);
+  let gains = 0, losses = 0;
+
+  for (let i = 1; i < candles.length; i++) {
+    const diff = candles[i].close - candles[i - 1].close;
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+
+    if (i <= period) {
+      gains += gain;
+      losses += loss;
+      if (i === period) {
+        const avgGain = gains / period;
+        const avgLoss = losses / period;
+        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+        rsi[i] = 100 - (100 / (1 + rs));
+      }
+    } else {
+      const prevAvgGain = gains / period;
+      const prevAvgLoss = losses / period;
+      const avgGain = (prevAvgGain * (period - 1) + gain) / period;
+      const avgLoss = (prevAvgLoss * (period - 1) + loss) / period;
+      gains = avgGain * period;
+      losses = avgLoss * period;
+      const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+      rsi[i] = 100 - (100 / (1 + rs));
+    }
+  }
+  return rsi;
 }
 
 const DRAW_TOOLS = [
@@ -1249,6 +1367,8 @@ async function viewTradeChart() {
       <div class="toolbar">
         <div class="field" style="margin-bottom:0;min-width:320px"><label>Select Trade</label><select id="tc-trade">${options || "<option>No trades</option>"}</select></div>
         <div class="right">
+          <button class="btn btn-sm" id="tc-prev-trade" title="Previous trade">◀ Prev</button>
+          <button class="btn btn-sm" id="tc-next-trade" title="Next trade">Next ▶</button>
           <select id="tc-timeframe">${["M1","M5","M15","M30","H1","H4","D1"].map((tf) => `<option ${tf === "M15" ? "selected" : ""}>${tf}</option>`).join("")}</select>
           <button class="btn btn-primary" id="tc-load">Load Chart</button>
         </div>
@@ -1270,7 +1390,10 @@ async function viewTradeChart() {
         <div class="indicator-toggles">
           <button class="btn-toggle ${TC.indicators.ema20 ? 'active ema20' : ''}" id="tc-toggle-ema20" title="Toggle 20-period Exponential Moving Average"><span class="dot-indicator" style="background:#38bdf8"></span> EMA 20</button>
           <button class="btn-toggle ${TC.indicators.ema50 ? 'active ema50' : ''}" id="tc-toggle-ema50" title="Toggle 50-period Exponential Moving Average"><span class="dot-indicator" style="background:#f59e0b"></span> EMA 50</button>
+          <button class="btn-toggle ${TC.indicators.vwap ? 'active vwap' : ''}" id="tc-toggle-vwap" title="Toggle Volume Weighted Average Price"><span class="dot-indicator" style="background:#a855f7"></span> VWAP</button>
+          <button class="btn-toggle ${TC.indicators.bollinger ? 'active bollinger' : ''}" id="tc-toggle-bollinger" title="Toggle Bollinger Bands (20, 2)"><span class="dot-indicator" style="background:#38bdf8"></span> BB</button>
           <button class="btn-toggle ${TC.indicators.volume ? 'active volume' : ''}" id="tc-toggle-vol" title="Toggle Volume histogram"><span class="dot-indicator" style="background:var(--win)"></span> Volume</button>
+          <button class="btn-toggle ${TC.indicators.rsi ? 'active rsi' : ''}" id="tc-toggle-rsi" title="Toggle Relative Strength Index (14)"><span class="dot-indicator" style="background:#c084fc"></span> RSI</button>
         </div>
         <div class="right">
           ${DRAW_TOOLS.map((t) => `<button class="btn" data-draw="${t.type}">${t.label}</button>`).join("")}
@@ -1286,6 +1409,7 @@ async function viewTradeChart() {
       <canvas id="tc-canvas" style="width:100%;height:420px;display:block;cursor:crosshair"></canvas>
       <div id="tc-ohlc-bar" class="chart-ohlc-bar">Hover over the chart to inspect bar prices</div>
       <div id="tc-overlay" class="kpi-sub" style="margin-top:12px"></div>
+      <div id="tc-trade-meta"></div>
       <div class="kpi-sub text-dim" style="margin-top:4px">Scroll or use +/- to zoom · drag to pan · crosshairs and indicators active.</div>
       <div id="tc-drawhint" class="kpi-sub text-dim" style="margin-top:4px"></div>
     </div>
@@ -1343,33 +1467,27 @@ async function viewTradeChart() {
   document.getElementById("tc-screenshot").addEventListener("click", takeScreenshot);
   document.getElementById("tc-copy-clipboard").addEventListener("click", copyChartToClipboard);
 
-  const btnEma20 = document.getElementById("tc-toggle-ema20");
-  if (btnEma20) {
-    btnEma20.addEventListener("click", () => {
-      TC.indicators.ema20 = !TC.indicators.ema20;
-      btnEma20.classList.toggle("active", TC.indicators.ema20);
-      btnEma20.classList.toggle("ema20", TC.indicators.ema20);
-      renderTradeChart();
-    });
+  document.getElementById("tc-prev-trade").addEventListener("click", () => stepTrade(1));
+  document.getElementById("tc-next-trade").addEventListener("click", () => stepTrade(-1));
+
+  function bindToggle(btnId, indicatorKey, activeClass) {
+    const btn = document.getElementById(btnId);
+    if (btn) {
+      btn.addEventListener("click", () => {
+        TC.indicators[indicatorKey] = !TC.indicators[indicatorKey];
+        btn.classList.toggle("active", TC.indicators[indicatorKey]);
+        btn.classList.toggle(activeClass, TC.indicators[indicatorKey]);
+        renderTradeChart();
+      });
+    }
   }
-  const btnEma50 = document.getElementById("tc-toggle-ema50");
-  if (btnEma50) {
-    btnEma50.addEventListener("click", () => {
-      TC.indicators.ema50 = !TC.indicators.ema50;
-      btnEma50.classList.toggle("active", TC.indicators.ema50);
-      btnEma50.classList.toggle("ema50", TC.indicators.ema50);
-      renderTradeChart();
-    });
-  }
-  const btnVol = document.getElementById("tc-toggle-vol");
-  if (btnVol) {
-    btnVol.addEventListener("click", () => {
-      TC.indicators.volume = !TC.indicators.volume;
-      btnVol.classList.toggle("active", TC.indicators.volume);
-      btnVol.classList.toggle("volume", TC.indicators.volume);
-      renderTradeChart();
-    });
-  }
+
+  bindToggle("tc-toggle-ema20", "ema20", "ema20");
+  bindToggle("tc-toggle-ema50", "ema50", "ema50");
+  bindToggle("tc-toggle-vwap", "vwap", "vwap");
+  bindToggle("tc-toggle-bollinger", "bollinger", "bollinger");
+  bindToggle("tc-toggle-vol", "volume", "volume");
+  bindToggle("tc-toggle-rsi", "rsi", "rsi");
 
   const canvas = document.getElementById("tc-canvas");
   canvas.addEventListener("mousedown", onCanvasMouseDown);
@@ -1388,6 +1506,17 @@ async function viewTradeChart() {
   await loadTradeChart();
 }
 
+function stepTrade(delta) {
+  const select = document.getElementById("tc-trade");
+  if (!select || !select.options.length) return;
+  const curIdx = select.selectedIndex;
+  const newIdx = curIdx + delta;
+  if (newIdx >= 0 && newIdx < select.options.length) {
+    select.selectedIndex = newIdx;
+    loadTradeChart();
+  }
+}
+
 async function loadTradeChart() {
   stopReplayTimer();
   const tradeId = document.getElementById("tc-trade").value;
@@ -1402,6 +1531,9 @@ async function loadTradeChart() {
   TC.overlay = data.overlay;
   TC.ema20 = computeEMA(TC.candles, 20);
   TC.ema50 = computeEMA(TC.candles, 50);
+  TC.vwap = computeVWAP(TC.candles);
+  TC.bollinger = computeBollingerBands(TC.candles, 20, 2);
+  TC.rsi = computeRSI(TC.candles, 14);
   TC.visibleCount = TC.candles.length; // show the full chart by default; Reset scrubs back for replay
   TC.viewStart = 0;
   TC.viewSize = null; // fresh trade/timeframe always loads fully zoomed out
@@ -1466,6 +1598,38 @@ function renderTradeChart() {
     `Entry ${fmtNum(o.entry_price, 5)} \u00b7 Exit ${o.exit_price !== null ? fmtNum(o.exit_price, 5) : "\u2014"} \u00b7 ` +
     `SL ${o.initial_sl !== null ? fmtNum(o.initial_sl, 5) : "\u2014"} \u00b7 TP ${o.initial_tp !== null ? fmtNum(o.initial_tp, 5) : "\u2014"} \u00b7 ` +
     `R: ${o.realized_r !== null ? fmtNum(o.realized_r, 2) : "unknown"} \u00b7 Bar ${TC.visibleCount}/${TC.candles.length}`;
+
+  const metaEl = document.getElementById("tc-trade-meta");
+  if (metaEl && TC.tradeId) {
+    const t = state.trades.find((x) => String(x.id) === String(TC.tradeId));
+    if (t) {
+      const pl = t.net_profit ?? t.profit ?? 0;
+      const isWin = pl >= 0;
+      const pnlColor = isWin ? "var(--color-win)" : "var(--color-loss)";
+      const dirBadge = (t.direction || "").toUpperCase() === "BUY"
+        ? '<span class="badge badge-win">▲ BUY</span>'
+        : '<span class="badge badge-loss">▼ SELL</span>';
+      const strat = state.strategies.find((s) => s.id === t.strategy_id);
+      const stratName = strat ? strat.name : (t.strategy_id ? `Strategy #${t.strategy_id}` : "Unclassified");
+      const rVal = t.realized_r !== null && t.realized_r !== undefined ? `${fmtNum(t.realized_r, 2)}R` : "—";
+      const volVal = t.volume ? `${fmtVolume(t.volume)} lots` : "—";
+      const durVal = t.duration_minutes ? (t.duration_minutes >= 60 ? `${Math.floor(t.duration_minutes / 60)}h ${Math.round(t.duration_minutes % 60)}m` : `${Math.round(t.duration_minutes)}m`) : "—";
+
+      metaEl.innerHTML = `
+        <div class="trade-meta-strip">
+          <div class="trade-meta-item"><strong>${esc(t.symbol)}</strong> ${dirBadge}</div>
+          <div class="trade-meta-item">Volume: <strong>${volVal}</strong></div>
+          <div class="trade-meta-item">PnL: <strong style="color:${pnlColor}">${fmtNum(pl, 2)}</strong></div>
+          <div class="trade-meta-item">Return: <strong>${rVal}</strong></div>
+          <div class="trade-meta-item">Strategy: <strong>${esc(stratName)}</strong></div>
+          <div class="trade-meta-item">Duration: <strong>${durVal}</strong></div>
+          <div class="trade-meta-item">Opened: <strong>${fmtDate(t.open_time)}</strong></div>
+        </div>
+      `;
+    } else {
+      metaEl.innerHTML = "";
+    }
+  }
 
   const revealed = TC.candles.slice(0, TC.visibleCount);
   const viewSize = getViewSize(revealed.length);
@@ -1539,10 +1703,18 @@ function onCanvasMouseMove(evt) {
       const changeStr = diff >= 0 ? `+${fmtNum(diff, 5)} (+${pct}%)` : `${fmtNum(diff, 5)} (${pct}%)`;
       const color = diff >= 0 ? "var(--color-win)" : "var(--color-loss)";
       const volStr = c.volume ? ` \u00b7 Vol: <strong>${c.volume.toLocaleString()}</strong>` : "";
+      let extra = "";
+      const barAbsIdx = (TC.viewStart || 0) + idx;
+      if (TC.indicators && TC.indicators.vwap && TC.vwap && TC.vwap[barAbsIdx] !== undefined) {
+        extra += ` \u00b7 <span style="color:#a855f7">VWAP: <strong>${fmtNum(TC.vwap[barAbsIdx], 5)}</strong></span>`;
+      }
+      if (TC.indicators && TC.indicators.rsi && TC.rsi && TC.rsi[barAbsIdx] !== null && TC.rsi[barAbsIdx] !== undefined) {
+        extra += ` \u00b7 <span style="color:#c084fc">RSI: <strong>${TC.rsi[barAbsIdx].toFixed(1)}</strong></span>`;
+      }
       ohlcEl.innerHTML = `<span><strong>${c.timestamp.replace("T", " ").slice(0, 19)}</strong></span> \u00b7 ` +
         `O: <strong>${fmtNum(c.open, 5)}</strong> \u00b7 H: <strong>${fmtNum(c.high, 5)}</strong> \u00b7 ` +
         `L: <strong>${fmtNum(c.low, 5)}</strong> \u00b7 C: <strong>${fmtNum(c.close, 5)}</strong> \u00b7 ` +
-        `<span style="color:${color}">\u0394 ${changeStr}</span>${volStr}`;
+        `<span style="color:${color}">\u0394 ${changeStr}</span>${volStr}${extra}`;
     }
   }
 
@@ -1809,13 +1981,24 @@ function drawCandles(canvas, candles, overlay, annotations) {
   const priceScaleW = 68;
   const pw = Math.max(100, w - priceScaleW);
   const showVol = Boolean(TC.indicators && TC.indicators.volume);
-  const volH = showVol ? Math.min(75, Math.floor(h * 0.22)) : 0;
-  const chartH = h - volH;
+  const showRSI = Boolean(TC.indicators && TC.indicators.rsi);
+  const volH = showVol ? Math.min(65, Math.floor(h * 0.18)) : 0;
+  const rsiH = showRSI ? Math.min(75, Math.floor(h * 0.20)) : 0;
+  const chartH = h - volH - rsiH;
 
   const highs = candles.map((c) => c.high), lows = candles.map((c) => c.low);
   let min = Math.min(...lows), max = Math.max(...highs);
   if (overlay && overlay.initial_sl) { min = Math.min(min, overlay.initial_sl); max = Math.max(max, overlay.initial_sl); }
   if (overlay && overlay.initial_tp) { min = Math.min(min, overlay.initial_tp); max = Math.max(max, overlay.initial_tp); }
+  const startIdx = TC.viewStart || 0;
+  if (TC.indicators && TC.indicators.bollinger && TC.bollinger && TC.bollinger.upper) {
+    for (let i = 0; i < candles.length; i++) {
+      const up = TC.bollinger.upper[startIdx + i];
+      const lo = TC.bollinger.lower[startIdx + i];
+      if (up !== undefined && up !== null) max = Math.max(max, up);
+      if (lo !== undefined && lo !== null) min = Math.min(min, lo);
+    }
+  }
   const pad = (max - min) * 0.08 || 0.0001;
   min -= pad; max += pad;
   const range = max - min;
@@ -1895,6 +2078,71 @@ function drawCandles(canvas, candles, overlay, annotations) {
     }
   }
 
+  // Draw Bollinger Bands (20, 2)
+  if (TC.indicators && TC.indicators.bollinger && TC.bollinger && TC.bollinger.upper && TC.bollinger.upper.length) {
+    ctx.fillStyle = "rgba(56, 189, 248, 0.06)";
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < candles.length; i++) {
+      const up = TC.bollinger.upper[startIdx + i];
+      if (up === null || up === undefined) continue;
+      const ex = i * cw + cw / 2;
+      const ey = y(up);
+      if (!started) { ctx.moveTo(ex, ey); started = true; }
+      else { ctx.lineTo(ex, ey); }
+    }
+    for (let i = candles.length - 1; i >= 0; i--) {
+      const lo = TC.bollinger.lower[startIdx + i];
+      if (lo === null || lo === undefined) continue;
+      const ex = i * cw + cw / 2;
+      const ey = y(lo);
+      ctx.lineTo(ex, ey);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.65)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    started = false;
+    for (let i = 0; i < candles.length; i++) {
+      const up = TC.bollinger.upper[startIdx + i];
+      if (up === null || up === undefined) continue;
+      const ex = i * cw + cw / 2;
+      const ey = y(up);
+      if (!started) { ctx.moveTo(ex, ey); started = true; }
+      else { ctx.lineTo(ex, ey); }
+    }
+    ctx.stroke();
+
+    ctx.beginPath();
+    started = false;
+    for (let i = 0; i < candles.length; i++) {
+      const lo = TC.bollinger.lower[startIdx + i];
+      if (lo === null || lo === undefined) continue;
+      const ex = i * cw + cw / 2;
+      const ey = y(lo);
+      if (!started) { ctx.moveTo(ex, ey); started = true; }
+      else { ctx.lineTo(ex, ey); }
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    started = false;
+    for (let i = 0; i < candles.length; i++) {
+      const mid = TC.bollinger.middle[startIdx + i];
+      if (mid === null || mid === undefined) continue;
+      const ex = i * cw + cw / 2;
+      const ey = y(mid);
+      if (!started) { ctx.moveTo(ex, ey); started = true; }
+      else { ctx.lineTo(ex, ey); }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   // Draw Candlestick Bars
   candles.forEach((c, i) => {
     const x = i * cw + cw / 2;
@@ -1909,7 +2157,6 @@ function drawCandles(canvas, candles, overlay, annotations) {
   });
 
   // Draw EMA Indicators
-  const startIdx = TC.viewStart || 0;
   if (TC.indicators && TC.indicators.ema20 && TC.ema20 && TC.ema20.length) {
     ctx.strokeStyle = "#38bdf8";
     ctx.lineWidth = 1.8;
@@ -1942,18 +2189,36 @@ function drawCandles(canvas, candles, overlay, annotations) {
     ctx.stroke();
   }
 
+  // Draw VWAP Indicator
+  if (TC.indicators && TC.indicators.vwap && TC.vwap && TC.vwap.length) {
+    ctx.strokeStyle = "#a855f7";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < candles.length; i++) {
+      const val = TC.vwap[startIdx + i];
+      if (val === null || val === undefined) continue;
+      const ex = i * cw + cw / 2;
+      const ey = y(val);
+      if (!started) { ctx.moveTo(ex, ey); started = true; }
+      else { ctx.lineTo(ex, ey); }
+    }
+    ctx.stroke();
+  }
+
   // Draw Volume Histogram Sub-Pane
   if (showVol) {
+    const volBaseY = chartH;
     ctx.strokeStyle = "rgba(48, 54, 61, 0.75)";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(0, chartH);
-    ctx.lineTo(pw, chartH);
+    ctx.moveTo(0, volBaseY);
+    ctx.lineTo(pw, volBaseY);
     ctx.stroke();
 
     ctx.fillStyle = "#8b949e";
     ctx.font = "bold 9.5px Segoe UI";
-    ctx.fillText("VOLUME", 8, chartH + 14);
+    ctx.fillText("VOLUME", 8, volBaseY + 14);
 
     let maxV = 1;
     for (const c of candles) {
@@ -1964,7 +2229,7 @@ function drawCandles(canvas, candles, overlay, annotations) {
       const vol = c.volume || 0;
       const x = i * cw + cw / 2;
       const barH = Math.max(2, (vol / maxV) * (volH - 22));
-      const barY = h - barH - 4;
+      const barY = volBaseY + volH - barH - 4;
       const up = c.close >= c.open;
       ctx.fillStyle = up ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)";
       ctx.fillRect(x - cw * 0.35, barY, cw * 0.7, barH);
@@ -1972,6 +2237,59 @@ function drawCandles(canvas, candles, overlay, annotations) {
       ctx.lineWidth = 0.8;
       ctx.strokeRect(x - cw * 0.35, barY, cw * 0.7, barH);
     });
+  }
+
+  // Draw RSI Sub-Pane
+  if (showRSI) {
+    const rsiBaseY = chartH + volH;
+    ctx.strokeStyle = "rgba(48, 54, 61, 0.75)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, rsiBaseY);
+    ctx.lineTo(pw, rsiBaseY);
+    ctx.stroke();
+
+    ctx.fillStyle = "#c084fc";
+    ctx.font = "bold 9.5px Segoe UI";
+    ctx.fillText("RSI (14)", 8, rsiBaseY + 13);
+
+    const rsiY = (val) => rsiBaseY + 12 + ((100 - val) / 100) * (rsiH - 20);
+
+    ctx.fillStyle = "rgba(192, 132, 252, 0.05)";
+    ctx.fillRect(0, rsiY(70), pw, rsiY(30) - rsiY(70));
+
+    ctx.setLineDash([2, 3]);
+    [70, 50, 30].forEach((level) => {
+      const yy = rsiY(level);
+      ctx.strokeStyle = level === 50 ? "rgba(255, 255, 255, 0.08)" : "rgba(192, 132, 252, 0.25)";
+      ctx.beginPath();
+      ctx.moveTo(0, yy);
+      ctx.lineTo(pw, yy);
+      ctx.stroke();
+
+      if (level !== 50) {
+        ctx.fillStyle = "rgba(192, 132, 252, 0.7)";
+        ctx.font = "9px Cascadia Code, Consolas, monospace";
+        ctx.fillText(String(level), pw + 6, yy + 3);
+      }
+    });
+    ctx.setLineDash([]);
+
+    if (TC.rsi && TC.rsi.length) {
+      ctx.strokeStyle = "#c084fc";
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      let started = false;
+      for (let i = 0; i < candles.length; i++) {
+        const val = TC.rsi[startIdx + i];
+        if (val === null || val === undefined) continue;
+        const rx = i * cw + cw / 2;
+        const ry = rsiY(val);
+        if (!started) { ctx.moveTo(rx, ry); started = true; }
+        else { ctx.lineTo(rx, ry); }
+      }
+      ctx.stroke();
+    }
   }
 
   // Draw Entry & SL/TP Levels
@@ -2095,6 +2413,34 @@ function drawCandles(canvas, candles, overlay, annotations) {
       legX += ctx.measureText(txt).width + 16;
     }
   }
+  if (TC.indicators && TC.indicators.vwap && TC.vwap && candles[lastBarIdx]) {
+    const val = TC.vwap[startIdx + lastBarIdx];
+    if (val !== undefined && val !== null) {
+      ctx.fillStyle = "#a855f7";
+      const txt = `VWAP: ${fmtNum(val, 5)}`;
+      ctx.fillText(txt, legX, 20);
+      legX += ctx.measureText(txt).width + 16;
+    }
+  }
+  if (TC.indicators && TC.indicators.bollinger && TC.bollinger && TC.bollinger.upper && candles[lastBarIdx]) {
+    const up = TC.bollinger.upper[startIdx + lastBarIdx];
+    const lo = TC.bollinger.lower[startIdx + lastBarIdx];
+    if (up !== undefined && up !== null && lo !== undefined && lo !== null) {
+      ctx.fillStyle = "#38bdf8";
+      const txt = `BB: [${fmtNum(lo, 4)} - ${fmtNum(up, 4)}]`;
+      ctx.fillText(txt, legX, 20);
+      legX += ctx.measureText(txt).width + 16;
+    }
+  }
+  if (TC.indicators && TC.indicators.rsi && TC.rsi && candles[lastBarIdx]) {
+    const val = TC.rsi[startIdx + lastBarIdx];
+    if (val !== undefined && val !== null) {
+      ctx.fillStyle = "#c084fc";
+      const txt = `RSI: ${val.toFixed(1)}`;
+      ctx.fillText(txt, legX, 20);
+      legX += ctx.measureText(txt).width + 16;
+    }
+  }
 
   // Draw Interactive Crosshair & Cursor Badges
   if (TC.hoverPoint && TC.hoverPoint.x >= 0 && TC.hoverPoint.x <= pw && TC.hoverPoint.y >= 0 && TC.hoverPoint.y <= h) {
@@ -2127,6 +2473,16 @@ function drawCandles(canvas, candles, overlay, annotations) {
       ctx.fillRect(pw, hy - 9, priceScaleW, 18);
       ctx.fillStyle = "#ffffff";
       ctx.fillText(pStr, pw + 5, hy + 3.5);
+    } else if (showRSI && hy >= chartH + volH && hy <= h) {
+      const rsiBaseY = chartH + volH;
+      const curRsi = 100 - ((hy - (rsiBaseY + 12)) / (rsiH - 20)) * 100;
+      if (curRsi >= 0 && curRsi <= 100) {
+        ctx.font = "bold 10px Cascadia Code, Consolas, monospace";
+        ctx.fillStyle = "#8b5cf6";
+        ctx.fillRect(pw, hy - 9, priceScaleW, 18);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(`RSI ${curRsi.toFixed(1)}`, pw + 4, hy + 3.5);
+      }
     }
 
     // Time Badge at Bottom X-Scale
