@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 — 2026-10-27
+
+- Grant the GitHub release workflow permission to publish binary assets.
+
 ## 1.1.0 — 2026-10-27
 
 ### Added

@@ -34,7 +34,7 @@ Write-Host "[SUCCESS] PyInstaller build verified at dist\TradeAudit\TradeAudit.e
 
 # Read version from src/tradeaudit/__init__.py - the single source of truth
 # also used at runtime (Settings.app_version) and in pyproject.toml.
-$version = "1.1.0"
+$version = "1.1.1"
 if (Test-Path "src\tradeaudit\__init__.py") {
     $content = Get-Content "src\tradeaudit\__init__.py" -Raw
     if ($content -match '__version__\s*=\s*"([^"]+)"') {

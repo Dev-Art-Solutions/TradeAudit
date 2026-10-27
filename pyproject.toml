@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tradeaudit"
-version = "1.1.0"
+version = "1.1.1"
 description = "Production-oriented MetaTrader 5 trade auditing, risk analytics, strategy-compliance and behavioral intelligence platform."
 readme = "README.md"
 requires-python = ">=3.11"
