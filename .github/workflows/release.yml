@@ -40,10 +40,27 @@ jobs:
           "zip_path=$($zip.FullName)" >> $env:GITHUB_OUTPUT
           "setup_path=$($setup.FullName)" >> $env:GITHUB_OUTPUT
 
+      - name: Generate SHA-256 checksums
+        id: checksums
+        shell: pwsh
+        run: |
+          $checksumPath = Join-Path $PWD "dist\SHA256SUMS.txt"
+          $artifacts = @(
+            "${{ steps.artifacts.outputs.zip_path }}",
+            "${{ steps.artifacts.outputs.setup_path }}"
+          )
+          $lines = foreach ($artifact in $artifacts) {
+            $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $(Split-Path -Leaf $artifact)"
+          }
+          $lines | Set-Content -LiteralPath $checksumPath -Encoding ascii
+          "checksum_path=$checksumPath" >> $env:GITHUB_OUTPUT
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ steps.artifacts.outputs.zip_path }}
             ${{ steps.artifacts.outputs.setup_path }}
+            ${{ steps.checksums.outputs.checksum_path }}
           generate_release_notes: true

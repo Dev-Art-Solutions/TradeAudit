@@ -44,7 +44,8 @@ class QuantResearchAnalyzer:
         horizon_trades: Optional[int] = None,
         ruin_threshold_r: float = 10.0,
         target_r: float = 20.0,
-        random_seed: Optional[int] = None
+        random_seed: Optional[int] = None,
+        sampling_method: str = "bootstrap"
     ) -> MonteCarloResult:
         """
         Execute Monte Carlo trade sequence resampling simulations.
@@ -56,6 +57,9 @@ class QuantResearchAnalyzer:
             ruin_threshold_r: Max drawdown / loss threshold in R units to measure ruin probability.
             target_r: Target cumulative profit in R units to measure achievement probability.
             random_seed: Optional RNG seed for deterministic reproducibility in tests.
+            sampling_method: ``bootstrap`` samples with replacement and estimates
+                outcome uncertainty. ``shuffle`` permutes observed trades without
+                replacement and estimates sequence risk only.
 
         Returns:
             MonteCarloResult with percentile paths, drawdown distribution, and probabilities.
@@ -71,6 +75,8 @@ class QuantResearchAnalyzer:
         n_trades = len(r_list)
         horizon = horizon_trades if horizon_trades and horizon_trades > 0 else n_trades
         num_sims = max(10, num_simulations)
+        if sampling_method not in {"bootstrap", "shuffle"}:
+            raise ValueError("sampling_method must be 'bootstrap' or 'shuffle'")
 
         # Store cumulative curves: paths[step][sim_idx]
         # Step 0 is starting point 0.0 R
@@ -95,7 +101,15 @@ class QuantResearchAnalyzer:
             # random.choices() (uniform, with replacement) is dramatically faster than
             # calling random.choice() per step - the latter's rejection-sampling internals
             # dominated runtime on real accounts (15M+ calls, ~15-20s on a 5k-trade sync).
-            path_r_values = rng.choices(r_list, k=horizon)
+            if sampling_method == "bootstrap":
+                path_r_values = rng.choices(r_list, k=horizon)
+            else:
+                path_r_values = []
+                while len(path_r_values) < horizon:
+                    batch = list(r_list)
+                    rng.shuffle(batch)
+                    path_r_values.extend(batch)
+                path_r_values = path_r_values[:horizon]
 
             for step in range(1, horizon + 1):
                 trade_r = path_r_values[step - 1]
@@ -164,7 +178,13 @@ class QuantResearchAnalyzer:
             max_drawdown_worst=round(max(sim_max_dds), 2),
             probability_of_ruin_threshold=round((ruin_hit_count / num_sims) * 100, 1),
             probability_of_target_r=round((target_hit_count / num_sims) * 100, 1),
-            worst_consecutive_losses_95th=int(self._percentile(sorted_loss_streaks, 95))
+            worst_consecutive_losses_95th=int(self._percentile(sorted_loss_streaks, 95)),
+            sampling_method=("bootstrap_with_replacement" if sampling_method == "bootstrap" else "shuffle_without_replacement"),
+            assumptions=[
+                "Observed R-multiples are representative of future trades.",
+                "Trade dependence and regime changes are not modeled.",
+                "Results are scenario estimates, not broker-level execution forecasts.",
+            ],
         )
 
     def calculate_risk_of_ruin(
@@ -178,9 +198,10 @@ class QuantResearchAnalyzer:
         """
         Compute formulaic and empirical Risk of Ruin.
 
-        Uses Brownian drift-diffusion equation:
+        Uses a Brownian drift-diffusion approximation:
             P(Ruin) = exp( -2 * mu_R * U / sigma_R^2 )
-        for positive expectancy, and 100% for non-positive expectancy.
+        for positive expectancy. Non-positive sample expectancy is classified as
+        critical because this finite sample cannot establish inevitable ruin.
         """
         r_list = self._extract_closed_r_multiples(trades)
         if len(r_list) < 5:
@@ -195,12 +216,13 @@ class QuantResearchAnalyzer:
         mean_r = statistics.mean(r_list)
         std_r = statistics.stdev(r_list) if len(r_list) > 1 else 0.0
         u_tolerance = max(1.0, max_drawdown_tolerance_r)
+        horizon = len(r_list) * 3
 
         # Empirical simulation
         mc = self.run_monte_carlo(
             trades=trades,
             num_simulations=num_simulations,
-            horizon_trades=len(r_list) * 3,
+            horizon_trades=horizon,
             ruin_threshold_r=u_tolerance,
             random_seed=random_seed
         )
@@ -209,8 +231,11 @@ class QuantResearchAnalyzer:
         # Formulaic calculation
         if mean_r <= 0 or std_r <= 1e-6:
             formulaic_prob = 1.0
-            risk_level = RuinRiskLevel.GUARANTEED_RUIN
-            verdict = "Guaranteed Ruin: Negative or zero expectancy guarantees capital exhaustion over time."
+            risk_level = RuinRiskLevel.CRITICAL_RISK
+            verdict = (
+                "Critical estimated risk: this sample has non-positive expectancy. "
+                "That does not prove inevitable ruin; the empirical percentage is a finite-horizon scenario estimate."
+            )
             recommendations = [
                 "Halt live trading and review strategy edge.",
                 "Verify entry criteria and stop-loss placement rules.",
@@ -266,7 +291,14 @@ class QuantResearchAnalyzer:
             risk_per_trade_pct=risk_per_trade_pct,
             risk_level=risk_level,
             summary_verdict=verdict,
-            recommendations=recommendations
+            recommendations=recommendations,
+            simulation_horizon_trades=horizon,
+            assumptions=[
+                f"Empirical estimate uses {horizon} trades and bootstrap sampling with replacement.",
+                "Formulaic estimate assumes independent, stationary R-multiples and a continuous diffusion approximation.",
+                "risk_per_trade_pct is informational because the drawdown threshold is supplied in R; convert an account-percent limit to R before calling.",
+                "Past trade history does not model spread, slippage, commissions, clustering, or regime changes unless already reflected in realized R.",
+            ]
         )
 
     def calculate_rolling_metrics(

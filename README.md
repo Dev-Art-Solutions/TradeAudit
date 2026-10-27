@@ -211,7 +211,7 @@ same one the GitHub Actions release workflow runs), see
 [`scripts/build_installer.ps1`](scripts/build_installer.ps1) — it requires
 [Inno Setup 6](https://jrsoftware.org/isdl.php) to be installed.
 
-A tagged push (`git tag v1.0.0 && git push --tags`) triggers
+A tagged push (`git tag v1.1.0 && git push --tags`) triggers
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which
 builds both artifacts and publishes them to a GitHub Release automatically.
 

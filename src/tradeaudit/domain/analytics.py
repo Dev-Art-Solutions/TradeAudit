@@ -40,6 +40,10 @@ class PerformanceMetrics:
     expectancy_monetary: float = 0.0
     max_drawdown_r: float = 0.0
     max_drawdown_monetary: float = 0.0
+    recovery_factor: Optional[float] = None
+    avg_duration_minutes: Optional[float] = None
+    median_duration_minutes: Optional[float] = None
+    trades_with_duration: int = 0
     max_consecutive_wins: int = 0
     max_consecutive_losses: int = 0
     verdict: ProfitabilityVerdict = ProfitabilityVerdict.INSUFFICIENT_DATA
@@ -102,6 +106,8 @@ class MonteCarloResult:
     probability_of_ruin_threshold: float = 0.0
     probability_of_target_r: float = 0.0
     worst_consecutive_losses_95th: int = 0
+    sampling_method: str = "bootstrap_with_replacement"
+    assumptions: List[str] = field(default_factory=list)
 
 
 class RuinRiskLevel(str, Enum):
@@ -125,6 +131,8 @@ class RiskOfRuinAnalysis:
     risk_level: RuinRiskLevel = RuinRiskLevel.INSUFFICIENT_DATA
     summary_verdict: str = ""
     recommendations: List[str] = field(default_factory=list)
+    simulation_horizon_trades: int = 0
+    assumptions: List[str] = field(default_factory=list)
 
 
 @dataclass

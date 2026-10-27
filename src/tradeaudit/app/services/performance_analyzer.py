@@ -4,6 +4,7 @@ Calculates statistical performance metrics, win/loss rates, R-multiples, expecta
 """
 
 from typing import List, Optional
+import statistics
 from datetime import datetime
 
 from tradeaudit.domain.models import Trade
@@ -64,6 +65,12 @@ class PerformanceAnalyzer:
         avg_win_monetary = round(gross_profit / win_count, 2) if win_count > 0 else 0.0
         avg_loss_monetary = round(gross_loss / loss_count, 2) if loss_count > 0 else 0.0
         expectancy_monetary = round(net_profit / total_trades, 2)
+
+        durations = [
+            (t.close_time - t.open_time).total_seconds() / 60.0
+            for t in closed_trades
+            if t.open_time is not None and t.close_time is not None and t.close_time >= t.open_time
+        ]
 
         # R-Multiple metrics
         trades_with_r_list = [t for t in closed_trades if t.realized_r is not None]
@@ -187,6 +194,13 @@ class PerformanceAnalyzer:
             expectancy_monetary=expectancy_monetary,
             max_drawdown_r=round(max_drawdown_r, 4),
             max_drawdown_monetary=round(max_drawdown_monetary, 2),
+            recovery_factor=(
+                round(net_profit / max_drawdown_monetary, 4)
+                if max_drawdown_monetary > 0 else None
+            ),
+            avg_duration_minutes=(round(sum(durations) / len(durations), 2) if durations else None),
+            median_duration_minutes=(round(statistics.median(durations), 2) if durations else None),
+            trades_with_duration=len(durations),
             max_consecutive_wins=max_consecutive_wins,
             max_consecutive_losses=max_consecutive_losses,
             verdict=verdict,

@@ -7,7 +7,7 @@
 ; src\tradeaudit\__init__.py's __version__. This fallback only applies when
 ; compiling the .iss directly (e.g. from the Inno Setup IDE).
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.1.0"
 #endif
 #define MyAppPublisher "Dev Art Solutions"
 #define MyAppExeName "TradeAudit.exe"

@@ -282,10 +282,14 @@ async function viewDashboard() {
         <canvas class="chart-canvas" id="chart-money"></canvas>
       </div>
     </div>
-    <div class="grid grid-3" style="margin-top:16px">
+    <div class="grid grid-4" style="margin-top:16px">
       <div class="card"><div class="card-title">Max Drawdown</div>
         <div class="kpi-value loss">${fmtNum(m.max_drawdown_r, 2)} R</div>
         <div class="kpi-sub">${fmtNum(m.max_drawdown_monetary)} monetary</div></div>
+      <div class="card"><div class="card-title">Recovery / Duration</div>
+        <div class="kpi-value">${m.recovery_factor === null ? "N/A" : fmtNum(m.recovery_factor, 2)}</div>
+        <div class="kpi-sub">Recovery factor</div>
+        <div class="kpi-sub" style="margin-top:8px">${m.avg_duration_minutes === null ? "N/A" : `${fmtNum(m.avg_duration_minutes, 1)} min avg`} (${m.trades_with_duration}/${m.total_trades})</div></div>
       <div class="card"><div class="card-title">Avg Win / Loss (R)</div>
         <div class="kpi-value win">${fmtNum(m.avg_win_r, 3)}</div>
         <div class="kpi-value loss">${fmtNum(m.avg_loss_r, 3)}</div></div>
@@ -1218,6 +1222,8 @@ async function viewQuant() {
         <div><div class="kpi-label">Formulaic Probability</div><div class="kpi-value">${fmtNum(ror.formulaic_ruin_probability, 1)}%</div></div>
       </div>
       <div class="kpi-sub" style="margin-top:12px">${esc(ror.summary_verdict)}</div>
+      <div class="kpi-sub" style="margin-top:8px">Horizon: ${ror.simulation_horizon_trades} trades · ${esc(mc.sampling_method.replace(/_/g, " "))}</div>
+      <ul class="kpi-sub">${(ror.assumptions || []).map((a) => `<li>${esc(a)}</li>`).join("")}</ul>
     </div>
     ${renderRollingTable(q.rolling_analytics)}
   `;

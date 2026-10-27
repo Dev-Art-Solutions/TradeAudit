@@ -103,10 +103,20 @@ def test_drawdown_curve_r_and_monetary():
 
     assert metrics.cumulative_monetary_series == [100.0, -50.0, 0.0, -100.0]
     assert metrics.max_drawdown_monetary == 200.0
+    assert metrics.recovery_factor == -0.5
 
     assert metrics.cumulative_r_series == [2.0, -1.0, 0.0, -2.0]
     assert metrics.drawdown_r_series == [0.0, 3.0, 2.0, 4.0]
     assert metrics.max_drawdown_r == 4.0
+
+
+def test_duration_metrics_and_undefined_recovery_factor():
+    trades = [create_sample_trade(profit=100.0, realized_r=1.0)]
+    metrics = PerformanceAnalyzer.analyze(trades)
+    assert metrics.avg_duration_minutes == 30.0
+    assert metrics.median_duration_minutes == 30.0
+    assert metrics.trades_with_duration == 1
+    assert metrics.recovery_factor is None
 
 
 def test_streak_counters():

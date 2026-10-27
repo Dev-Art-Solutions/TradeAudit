@@ -102,8 +102,18 @@ def test_risk_of_ruin_insufficient_sample(analyzer):
 
 def test_risk_of_ruin_negative_expectancy(analyzer, sample_losing_trades):
     ror = analyzer.calculate_risk_of_ruin(sample_losing_trades, max_drawdown_tolerance_r=10.0, random_seed=42)
-    assert ror.risk_level == RuinRiskLevel.GUARANTEED_RUIN
+    assert ror.risk_level == RuinRiskLevel.CRITICAL_RISK
     assert ror.formulaic_ruin_probability == 100.0
+    assert "inevitable" in ror.summary_verdict.lower()
+    assert ror.simulation_horizon_trades == 60
+
+
+def test_shuffle_and_bootstrap_are_distinguished(analyzer, sample_winning_trades):
+    shuffled = analyzer.run_monte_carlo(sample_winning_trades, num_simulations=20, random_seed=7, sampling_method="shuffle")
+    bootstrapped = analyzer.run_monte_carlo(sample_winning_trades, num_simulations=20, random_seed=7, sampling_method="bootstrap")
+    assert shuffled.sampling_method == "shuffle_without_replacement"
+    assert bootstrapped.sampling_method == "bootstrap_with_replacement"
+    assert shuffled.final_r_5th == shuffled.final_r_95th
 
 
 def test_risk_of_ruin_profitable_strategy(analyzer, sample_winning_trades):
