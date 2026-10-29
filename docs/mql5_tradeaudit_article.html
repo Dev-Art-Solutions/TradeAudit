@@ -1,0 +1,217 @@
+<!--
+MQL5 submission metadata
+Title: Building TradeAudit: turning MT5 deal history into trades I can actually review
+Abstract: A practical look at reconstructing MT5 deals into logical trades, preserving initial risk, separating strategy compliance from execution, and packaging the result as a local Windows analytics application.
+Keywords: MetaTrader 5, Python, trade journal, R-multiple, Monte Carlo, risk analysis, FastAPI, SQLite
+Suggested lead image: docs/images/01-dashboard.png
+-->
+<article lang="en">
+  <header>
+    <h1>Building TradeAudit: turning MT5 deal history into trades I can actually review</h1>
+    <p>
+      MetaTrader 5 keeps a detailed execution history. The difficult part starts when you try to answer a simple question from it: how did this trade perform?
+    </p>
+    <p>
+      A position can have several entry deals, a partial close, another entry, commission, swap and a final exit. Reading those rows one by one is useful for reconciliation, but it is awkward for reviewing a trading decision. I built TradeAudit to reconstruct that history into logical trades and then examine risk, execution and rule compliance.
+    </p>
+  </header>
+
+  <!-- MQL5 editor: insert the dashboard screenshot from docs/images/01-dashboard.png here. -->
+
+  <section>
+    <h2>What I wanted from the application</h2>
+    <p>
+      I wanted to separate two questions that are often mixed together. The first is whether a strategy has produced a positive historical expectancy. The second is whether the trader followed that strategy. A profitable month does not answer either question on its own.
+    </p>
+    <p>
+      TradeAudit reads MT5 history and calculates monetary and R-based performance. It also compares compliant trades with deviations, records review notes and runs statistical simulations on the resulting trade series. It is a read-only application. It does not place, modify or close orders.
+    </p>
+    <p>
+      The project is a Windows desktop application built with Python, SQLite, FastAPI and pywebview. MT5 remains the source of account and execution data. Everything else runs locally on the user's computer.
+    </p>
+  </section>
+
+  <section>
+    <h2>The first problem: a deal is not a trade</h2>
+    <p>
+      MT5 exposes deals, orders and positions as related but different records. For a journal, I needed one object that represented the full life of a trading idea. That meant grouping the relevant deals by account and position, while excluding balance operations and other records that are not executions.
+    </p>
+    <p>
+      The aggregator handles multiple entries and exits. Entry and exit prices are volume-weighted, and the final result includes swap, commission and fees. This produces a trade record with an opening time, closing time, direction, total volume and the execution records that created it.
+    </p>
+    <pre><code class="language-python">@dataclass
+class Trade:
+    account_id: int
+    position_id: int
+    symbol: str
+    direction: str
+    volume: float
+    open_price: float
+    close_price: float | None
+    initial_sl: float | None
+    initial_tp: float | None
+    profit: float
+    swap: float
+    commission: float
+    fee: float
+
+    @property
+    def net_profit(self) -&gt; float:
+        return self.profit + self.swap + self.commission + self.fee</code></pre>
+    <p>
+      Account ID is part of the grouping and persistence rules. Two accounts may contain the same position number, so using the position number alone would eventually mix unrelated records.
+    </p>
+  </section>
+
+  <section>
+    <h2>Keeping the original risk</h2>
+    <p>
+      Monetary profit is easy to read and hard to compare. A gain of 100 USD means something different when the initial risk was 25 USD than when it was 200 USD. TradeAudit uses the initial stop-loss to define one unit of risk.
+    </p>
+    <pre><code>1R = initial monetary risk
+realized R = net result / initial monetary risk</code></pre>
+    <p>
+      The word <em>initial</em> is important. If a stop is trailed later, the original risk does not change. Otherwise, the same trade could acquire a different R result every time the stop moved.
+    </p>
+    <p>
+      Some historical trades do not have a reliable initial stop. In that case, TradeAudit leaves the R value empty. It still includes the monetary result, but it does not manufacture an initial risk from the final loss or a later stop value. Reports include the number of trades with known R, so a reader can see how complete the sample is.
+    </p>
+  </section>
+
+  <section>
+    <h2>Metrics that need context</h2>
+    <p>
+      The performance analyzer calculates win rate, expectancy, profit factor, drawdown and winning or losing streaks. I recently added recovery factor and duration statistics.
+    </p>
+    <pre><code>recovery factor = net profit / absolute maximum monetary drawdown</code></pre>
+    <p>
+      When maximum drawdown is zero, the ratio is undefined. The application returns an empty value instead of displaying infinity. Average and median duration are calculated only for closed trades with valid opening and closing timestamps. The result includes a sample count for the same reason that the R metrics do: a number without its coverage can be misleading.
+    </p>
+    <p>
+      Breakdowns by symbol, direction, session, weekday and hour use the same performance analyzer. Keeping one calculation path avoids subtle differences between the dashboard, filtered views and exported report.
+    </p>
+  </section>
+
+  <section>
+    <h2>Comparing the strategy with its execution</h2>
+    <p>
+      A losing trade can be a valid strategy trade. A profitable trade can still violate the plan. I wanted the journal to preserve that distinction instead of treating every winner as good execution.
+    </p>
+    <p>Users can define rules for a strategy, including:</p>
+    <ul>
+      <li>minimum planned reward-to-risk ratio;</li>
+      <li>maximum risk percentage;</li>
+      <li>allowed symbols, sessions and trade direction;</li>
+      <li>required stop-loss or take-profit;</li>
+      <li>maximum number of trades per day.</li>
+    </ul>
+    <p>
+      The compliance engine records each passed rule and violation, then assigns one of four states: <code>COMPLIANT</code>, <code>PARTIAL</code>, <code>DEVIATION</code> or <code>UNCHECKED</code>. The strategy-versus-trader view separates compliant winners, compliant losses, deviation winners and deviation losses.
+    </p>
+    <p>
+      I find the deviation winner particularly useful during review. It made money, but it can reward behaviour that the strategy was designed to avoid. The application reports it as a profitable deviation rather than quietly merging it into the compliant sample.
+    </p>
+  </section>
+
+  <!-- MQL5 editor: insert docs/images/02-strategy-vs-trader.png here. -->
+
+  <section>
+    <h2>Behavioural flags are review prompts</h2>
+    <p>
+      TradeAudit can flag rapid re-entry after a loss, possible FOMO, overtrading, risk escalation and a stop moved farther from the entry. These are deterministic rules over the available trade data. They are not psychological diagnoses.
+    </p>
+    <p>
+      Each flag stores a reason and confidence level. The trader can confirm or reject it and add a note. Trades may also carry a self-reported emotional tag. This leaves the final interpretation with the person reviewing the trade.
+    </p>
+  </section>
+
+  <section>
+    <h2>What the Monte Carlo page measures</h2>
+    <p>
+      TradeAudit has two sampling modes because shuffling and bootstrapping answer different questions.
+    </p>
+    <p>
+      Shuffle mode rearranges the observed trades without replacement. The total result stays the same when the horizon matches the sample, while drawdown and losing-streak paths change. It is useful for studying sequence risk in the history that already occurred.
+    </p>
+    <p>
+      Bootstrap mode samples observed R values with replacement. Some trades may appear more than once and others may not appear in a simulated path. This creates a distribution of possible outcomes under the assumption that the observed R values are representative.
+    </p>
+    <p>
+      Both modes accept a deterministic seed. The output records the sampling method, simulation horizon and assumptions. The risk-of-ruin calculation also reports its horizon. A sample with non-positive expectancy receives a critical-risk classification, but the application does not call ruin guaranteed. A finite sample cannot establish that claim.
+    </p>
+    <p>
+      Bootstrap confidence intervals cover win rate, expectancy, average R and profit factor. Small samples receive a warning, and an expectancy interval that includes zero is not labelled statistically significant.
+    </p>
+  </section>
+
+  <!-- MQL5 editor: insert docs/images/04-quant-risk.png here. -->
+
+  <section>
+    <h2>Chart replay and notes</h2>
+    <p>
+      The chart view loads OHLC candles around a selected trade and draws the entry, initial stop and target. The trader can replay the chart bar by bar, zoom, pan and add annotations. EMA, VWAP, Bollinger Bands and RSI are available for visual context.
+    </p>
+    <p>
+      Notes and drawings are saved by trade and timeframe. Screenshots can be attached to the review. This part of the application is deliberately manual. A chart often explains a trade more clearly than another aggregate statistic.
+    </p>
+    <p>
+      OHLC data has a known limitation: it does not reveal the order of price movement inside a candle. TradeAudit does not currently publish MAE or MFE until the calculation can store its source granularity, candle coverage and approximation status. A bar-derived excursion should never be presented as exact tick execution.
+    </p>
+  </section>
+
+  <!-- MQL5 editor: insert docs/images/03-trade-chart-replay.png here. -->
+
+  <section>
+    <h2>Why the application runs locally</h2>
+    <p>
+      Trading history can contain account numbers, broker details, comments and strategy information. I did not want the normal workflow to depend on sending those records to an analytics service.
+    </p>
+    <p>
+      TradeAudit stores its database locally in SQLite. Credentials go through the Windows Credential Locker. A random session token protects the loopback API used by the desktop interface, and report exports can mask account and broker information. The application also creates local database backups.
+    </p>
+    <p>
+      The interface is a small FastAPI application displayed in pywebview. That gives the project a web-style UI while keeping the service on <code>127.0.0.1</code> inside the desktop process.
+    </p>
+  </section>
+
+  <section>
+    <h2>Packaging and testing</h2>
+    <p>
+      The repository contains unit tests for the calculation services, repositories, MT5 adapters and API. A Playwright suite exercises the rendered interface. The Windows build uses PyInstaller, and Inno Setup creates the installer.
+    </p>
+    <p>
+      A tagged GitHub workflow builds an installer and a portable ZIP on a Windows runner. It also publishes a SHA-256 checksum manifest. Users can run the packaged application without installing Python or cloning the source repository.
+    </p>
+  </section>
+
+  <section>
+    <h2>Limits of the analysis</h2>
+    <p>
+      TradeAudit analyses recorded trades. It does not reproduce a strategy's historical signals, so its resampling tools are not a strategy backtest. They do not model changing market regimes, clustered trades or execution conditions that are absent from the source history.
+    </p>
+    <p>
+      Risk estimates describe scenarios under stated assumptions. They do not predict future returns. Missing initial stops reduce the R sample, and OHLC candles cannot provide exact intrabar execution. These limitations appear in the report because they affect how the numbers should be read.
+    </p>
+  </section>
+
+  <section>
+    <h2>Source code and Windows release</h2>
+    <p>
+      TradeAudit is free and open source under the MIT License. The repository contains the application code, tests, packaging files and release audit.
+    </p>
+    <p>
+      Source code:<br>
+      <a href="https://github.com/Dev-Art-Solutions/TradeAudit">https://github.com/Dev-Art-Solutions/TradeAudit</a>
+    </p>
+    <p>
+      Windows release:<br>
+      <a href="https://github.com/Dev-Art-Solutions/TradeAudit/releases/tag/v1.1.1">https://github.com/Dev-Art-Solutions/TradeAudit/releases/tag/v1.1.1</a>
+    </p>
+    <p>
+      The source repository is the permanent project reference. The release link points to the exact version discussed in this article.
+    </p>
+    <p>
+      The release page provides the installer, portable ZIP and checksum file. TradeAudit is a Python desktop application that works with MetaTrader 5. It is not an Expert Advisor or an MQL5 Market product.
+    </p>
+  </section>
+</article>

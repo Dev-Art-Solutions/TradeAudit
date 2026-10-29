@@ -36,6 +36,17 @@ trade log.
 TradeAudit answers all four quantitatively and automatically, from your
 real MT5 trade history.
 
+## Download for Windows
+
+The latest public build is available as an installer or a portable archive:
+
+- [Windows installer](https://github.com/Dev-Art-Solutions/TradeAudit/releases/latest/download/TradeAudit-Setup-v1.1.1.exe)
+- [Portable ZIP](https://github.com/Dev-Art-Solutions/TradeAudit/releases/latest/download/TradeAudit-v1.1.1-win64-portable.zip)
+- [SHA-256 checksums](https://github.com/Dev-Art-Solutions/TradeAudit/releases/latest/download/SHA256SUMS.txt)
+
+No Python installation or source checkout is required. TradeAudit is a
+read-only analytics application: it does not place, modify, or close orders.
+
 ---
 
 ## 🏗️ What This Project Demonstrates
