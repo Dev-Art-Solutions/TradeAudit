@@ -3,6 +3,7 @@ FastAPI backend for the TradeAudit web UI. Wraps the existing, already-tested
 service/domain/infrastructure layers - no business logic lives here.
 """
 import base64
+import binascii
 import csv
 import io
 import logging
@@ -12,10 +13,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from tradeaudit.app.exceptions import MT5Error, CredentialStoreError
 from tradeaudit.domain.models import MT5Settings, Strategy
@@ -34,25 +35,25 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 class SettingsPayload(BaseModel):
-    mt5_path: str = ""
-    login: int = 0
-    server: str = ""
-    timeout_ms: int = 60000
+    mt5_path: str = Field(default="", max_length=1024)
+    login: int = Field(default=0, ge=0)
+    server: str = Field(default="", max_length=255)
+    timeout_ms: int = Field(default=60000, ge=1000, le=300000)
 
 
 class ConnectPayload(SettingsPayload):
-    password: str = ""
+    password: str = Field(default="", max_length=1024)
 
 
 class StrategyPayload(BaseModel):
     id: Optional[int] = None
-    name: str = ""
-    description: str = ""
-    allowed_symbols: list[str] = []
-    allowed_sessions: list[str] = []
-    min_rr: Optional[float] = None
-    max_risk_pct: Optional[float] = None
-    max_trades_per_day: Optional[int] = None
+    name: str = Field(default="", min_length=1, max_length=120)
+    description: str = Field(default="", max_length=4000)
+    allowed_symbols: list[str] = Field(default_factory=list, max_length=200)
+    allowed_sessions: list[str] = Field(default_factory=list, max_length=20)
+    min_rr: Optional[float] = Field(default=None, ge=0, le=100)
+    max_risk_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    max_trades_per_day: Optional[int] = Field(default=None, ge=1, le=10000)
     requires_sl: bool = False
     requires_tp: bool = False
     allowed_direction: str = "ALL"
@@ -64,35 +65,40 @@ class AssignStrategyPayload(BaseModel):
 
 
 class TradeEmotionPayload(BaseModel):
-    emotion_tag: Optional[str] = None
-    behavior_notes: Optional[str] = None
+    emotion_tag: Optional[str] = Field(default=None, max_length=64)
+    behavior_notes: Optional[str] = Field(default=None, max_length=10000)
 
 
 class JournalNotePayload(BaseModel):
-    setup_name: str = ""
-    rating: str = "A"
-    pre_trade_thesis: str = ""
-    post_trade_review: str = ""
-    lessons_learned: str = ""
-    mistakes_identified: list[str] = []
-    checklist_data: dict[str, bool] = {}
+    setup_name: str = Field(default="", max_length=255)
+    rating: str = Field(default="A", max_length=8)
+    pre_trade_thesis: str = Field(default="", max_length=20000)
+    post_trade_review: str = Field(default="", max_length=20000)
+    lessons_learned: str = Field(default="", max_length=20000)
+    mistakes_identified: list[str] = Field(default_factory=list, max_length=200)
+    checklist_data: dict[str, bool] = Field(default_factory=dict)
 
 
 class AnnotationPayload(BaseModel):
     id: Optional[int] = None
-    timeframe: str = "M15"
-    annotation_type: str = "TREND_LINE"
+    timeframe: str = Field(default="M15", max_length=16)
+    annotation_type: str = Field(default="TREND_LINE", max_length=32)
     p1_time: Optional[str] = None
     p1_price: float = 0.0
     p2_time: Optional[str] = None
     p2_price: float = 0.0
-    color: str = "#58a6ff"
-    line_width: int = 2
-    text: str = ""
+    color: str = Field(default="#58a6ff", pattern=r"^#[0-9a-fA-F]{6}$")
+    line_width: int = Field(default=2, ge=1, le=20)
+    text: str = Field(default="", max_length=4000)
 
 
 class ScreenshotPayload(BaseModel):
-    image_base64: str
+    image_base64: str = Field(min_length=1, max_length=7_000_000)
+
+
+MAX_REQUEST_BYTES = 8 * 1024 * 1024
+MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
@@ -111,10 +117,39 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
 
     @app.middleware("http")
     async def _require_api_token(request: Request, call_next):
+        def secure(response: Response) -> Response:
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "no-referrer"
+            response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
+        host = (request.url.hostname or "").lower()
+        allowed_hosts = {"127.0.0.1", "localhost", "::1"}
+        if api_token is not None:  # Explicit tokens are used by the in-process test client.
+            allowed_hosts.add("testserver")
+        if host not in allowed_hosts:
+            return secure(Response(status_code=400, content="Invalid host."))
+
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_REQUEST_BYTES:
+                    return secure(Response(status_code=413, content="Request body too large."))
+            except ValueError:
+                return secure(Response(status_code=400, content="Invalid Content-Length header."))
+
         if request.url.path.startswith("/api/"):
-            if request.headers.get("X-TradeAudit-Token") != app.state.api_token:
-                return Response(status_code=401, content="Missing or invalid API token.")
-        return await call_next(request)
+            supplied_token = request.headers.get("X-TradeAudit-Token", "")
+            if not secrets.compare_digest(supplied_token, app.state.api_token):
+                return secure(Response(status_code=401, content="Missing or invalid API token."))
+            origin = request.headers.get("origin")
+            if origin and not origin.startswith(("http://127.0.0.1:", "http://localhost:")):
+                return secure(Response(status_code=403, content="Invalid request origin."))
+
+        response = await call_next(request)
+        return secure(response)
 
     def closed_trades():
         login = ctx.current_login()
@@ -188,8 +223,9 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
             )
         except MT5Error as e:
             raise HTTPException(status_code=400, detail=e.message)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception:
+            logger.exception("Unexpected MT5 connection failure")
+            raise HTTPException(status_code=500, detail="Unexpected MT5 connection failure. See application logs.")
 
         if settings.login and payload.password:
             try:
@@ -219,6 +255,7 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
 
         result = ctx.sync_service.sync_account_history(account_id=saved.login, account_info=account_info)
         if result.success:
+            quant_cache.clear()
             try:
                 ctx.strategy_service.reevaluate_account_compliance(saved.login)
                 ctx.behavior_service.run_behavior_analysis_for_account(saved.login)
@@ -230,12 +267,13 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
     def backup():
         try:
             path = ctx.backup_service.create_backup(tag="manual")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception:
+            logger.exception("Manual backup failed")
+            raise HTTPException(status_code=500, detail="Backup failed. See application logs.")
         return {"path": str(path)}
 
     @app.get("/api/logs/recent")
-    def recent_logs(lines: int = 300):
+    def recent_logs(lines: int = Query(default=300, ge=1, le=2000)):
         """
         Tail the app's own log file. Lets a non-technical user grab diagnostic
         context (e.g. to paste into a support request) without hunting through
@@ -507,8 +545,16 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
     def save_screenshot(trade_id: int, payload: ScreenshotPayload):
         try:
             header, encoded = payload.image_base64.split(",", 1) if "," in payload.image_base64 else ("", payload.image_base64)
-            image_bytes = base64.b64decode(encoded)
-        except Exception:
+            if header and header != "data:image/png;base64":
+                raise ValueError("Unsupported image type")
+            image_bytes = base64.b64decode(encoded, validate=True)
+            if len(image_bytes) > MAX_SCREENSHOT_BYTES:
+                raise HTTPException(status_code=413, detail="Screenshot exceeds the 5 MB limit.")
+            if not image_bytes.startswith(PNG_SIGNATURE):
+                raise ValueError("Invalid PNG signature")
+        except HTTPException:
+            raise
+        except (ValueError, TypeError, binascii.Error):
             raise HTTPException(status_code=400, detail="Invalid image data.")
 
         ctx.settings.screenshots_dir.mkdir(parents=True, exist_ok=True)

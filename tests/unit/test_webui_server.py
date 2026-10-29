@@ -3,6 +3,7 @@ Smoke tests for the FastAPI web UI backend - covers the empty-account /
 no-MT5 paths every real first-run hits, plus basic strategy CRUD.
 """
 from pathlib import Path
+import base64
 
 import pytest
 from fastapi.testclient import TestClient
@@ -47,6 +48,29 @@ def test_api_rejects_requests_without_the_token(test_settings, test_db_manager):
     # token - the frontend has to be able to load the page to obtain it.
     assert unauthenticated_client.get("/").status_code == 200
     assert unauthenticated_client.get("/assets/app.js").status_code == 200
+
+
+def test_security_headers_and_origin_validation(client):
+    res = client.get("/api/state")
+    assert res.headers["x-content-type-options"] == "nosniff"
+    assert res.headers["x-frame-options"] == "DENY"
+    assert res.headers["referrer-policy"] == "no-referrer"
+    assert res.headers["cache-control"] == "no-store"
+
+    rejected = client.post(
+        "/api/settings",
+        headers={"Origin": "https://malicious.example"},
+        json={"login": 1},
+    )
+    assert rejected.status_code == 403
+
+
+def test_payload_validation_and_log_bounds(client):
+    assert client.post("/api/settings", json={"login": -1}).status_code == 422
+    assert client.post("/api/settings", json={"timeout_ms": 10}).status_code == 422
+    assert client.post("/api/strategies", json={"name": ""}).status_code == 422
+    assert client.get("/api/logs/recent?lines=0").status_code == 422
+    assert client.get("/api/logs/recent?lines=2001").status_code == 422
 
 
 def test_state_with_no_account_configured(client):
@@ -196,6 +220,15 @@ def test_screenshot_upload_saves_file_and_attaches_to_journal(client, existing_t
     assert Path(body["path"]).exists()
     assert body["path"] in body["note"]["screenshot_paths"]
     Path(body["path"]).unlink(missing_ok=True)
+
+
+def test_screenshot_upload_rejects_non_png_content(client, existing_trade_id):
+    payload = base64.b64encode(b"not a png").decode("ascii")
+    res = client.post(
+        f"/api/trades/{existing_trade_id}/screenshot",
+        json={"image_base64": "data:image/png;base64," + payload},
+    )
+    assert res.status_code == 400
 
 
 def test_live_journal_without_account(client):

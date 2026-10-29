@@ -29,6 +29,11 @@ def bootstrap_application() -> Tuple[Settings, DatabaseManager]:
     # 4. Initialize Database connection and tables
     db_manager = DatabaseManager(settings)
     db_manager.init_db()
+    if not db_manager.check_integrity():
+        db_manager.close()
+        raise RuntimeError(
+            "TradeAudit database integrity check failed. Preserve the database file and restore a known-good backup."
+        )
 
     logger.info("Bootstrap complete.")
     return settings, db_manager

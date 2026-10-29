@@ -43,6 +43,8 @@ class DatabaseManager:
                     cursor = dbapi_connection.cursor()
                     cursor.execute("PRAGMA journal_mode=WAL")
                     cursor.execute("PRAGMA foreign_keys=ON")
+                    cursor.execute("PRAGMA busy_timeout=5000")
+                    cursor.execute("PRAGMA synchronous=NORMAL")
                     cursor.close()
             self.SessionLocal = sessionmaker(
                 autocommit=False,
@@ -71,6 +73,21 @@ class DatabaseManager:
                 return result == 1
         except Exception as err:
             logger.error("Database health check failed: %s", err)
+            return False
+
+    def check_integrity(self) -> bool:
+        """Run SQLite's fast structural integrity check before serving user data."""
+        if not self.database_url.startswith("sqlite"):
+            return self.check_connection()
+        try:
+            with self.engine.connect() as conn:
+                rows = conn.execute(text("PRAGMA quick_check")).scalars().all()
+                healthy = rows == ["ok"]
+                if not healthy:
+                    logger.error("SQLite integrity check failed: %s", rows)
+                return healthy
+        except Exception as err:
+            logger.error("SQLite integrity check could not run: %s", err)
             return False
 
     def get_session(self) -> Generator[Session, None, None]:

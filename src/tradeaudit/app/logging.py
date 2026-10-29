@@ -3,11 +3,33 @@ Application logging configuration.
 """
 
 import logging
+import re
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from tradeaudit.app.config import Settings
+
+
+class SensitiveDataFilter(logging.Filter):
+    """Redact common credentials and prevent forged multiline log entries."""
+
+    _key_value = re.compile(
+        r"(?i)(password|passwd|pwd|api[_-]?key|access[_-]?token|authorization)"
+        r"(\s*[:=]\s*)([^\s,;]+)"
+    )
+    _bearer = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if getattr(record, "_tradeaudit_redacted", False):
+            return True
+        message = record.getMessage()
+        message = self._key_value.sub(r"\1\2[REDACTED]", message)
+        message = self._bearer.sub(r"\1[REDACTED]", message)
+        record.msg = message.replace("\r", "\\r").replace("\n", "\\n")
+        record.args = ()
+        record._tradeaudit_redacted = True
+        return True
 
 
 def setup_logging(settings: Settings) -> logging.Logger:
@@ -30,6 +52,7 @@ def setup_logging(settings: Settings) -> logging.Logger:
 
     # Console Handler
     console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.addFilter(SensitiveDataFilter())
     console_handler.setFormatter(formatter)
     console_handler.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
     logger.addHandler(console_handler)
@@ -41,6 +64,7 @@ def setup_logging(settings: Settings) -> logging.Logger:
         backupCount=3,
         encoding="utf-8"
     )
+    file_handler.addFilter(SensitiveDataFilter())
     file_handler.setFormatter(formatter)
     file_handler.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
     logger.addHandler(file_handler)

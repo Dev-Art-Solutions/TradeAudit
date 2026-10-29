@@ -8,6 +8,7 @@ from tradeaudit.infrastructure.database.models import AuditMeta
 
 def test_database_connection_check(test_db_manager):
     assert test_db_manager.check_connection() is True
+    assert test_db_manager.check_integrity() is True
 
 
 def test_database_tables_created(test_db_manager):
@@ -40,3 +41,9 @@ def test_sqlite_wal_and_foreign_keys_enabled(test_db_manager):
 
         foreign_keys = conn.execute(text("PRAGMA foreign_keys")).scalar()
         assert foreign_keys == 1
+
+        busy_timeout = conn.execute(text("PRAGMA busy_timeout")).scalar()
+        assert busy_timeout == 5000
+
+        synchronous = conn.execute(text("PRAGMA synchronous")).scalar()
+        assert synchronous == 1  # NORMAL
