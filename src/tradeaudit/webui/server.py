@@ -8,13 +8,14 @@ import csv
 import io
 import logging
 import secrets
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -117,6 +118,10 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
 
     @app.middleware("http")
     async def _require_api_token(request: Request, call_next):
+        request_id = uuid.uuid4().hex
+        request.state.request_id = request_id
+        started_at = time.perf_counter()
+
         def secure(response: Response) -> Response:
             response.headers["X-Content-Type-Options"] = "nosniff"
             response.headers["X-Frame-Options"] = "DENY"
@@ -128,6 +133,7 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
                 "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
                 "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
             )
+            response.headers["X-Request-ID"] = request_id
             return response
 
         host = (request.url.hostname or "").lower()
@@ -153,7 +159,29 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
             if origin and not origin.startswith(("http://127.0.0.1:", "http://localhost:")):
                 return secure(Response(status_code=403, content="Invalid request origin."))
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            logger.exception(
+                "Unhandled request failure request_id=%s method=%s path=%s",
+                request_id,
+                request.method,
+                request.url.path,
+            )
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": "Unexpected application error.", "request_id": request_id},
+            )
+        duration_ms = (time.perf_counter() - started_at) * 1000
+        if response.status_code >= 500 or duration_ms >= 1000:
+            logger.warning(
+                "Request completed request_id=%s method=%s path=%s status=%s duration_ms=%.1f",
+                request_id,
+                request.method,
+                request.url.path,
+                response.status_code,
+                duration_ms,
+            )
         return secure(response)
 
     def closed_trades():

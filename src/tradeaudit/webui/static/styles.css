@@ -19,6 +19,21 @@
 
 * { box-sizing: border-box; }
 
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  transform: translateY(-160%);
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip-link:focus { transform: translateY(0); }
+
 html, body {
   margin: 0;
   padding: 0;
@@ -98,6 +113,16 @@ html, body {
 .nav-item.active { background: rgba(88, 166, 255, 0.12); color: var(--accent); }
 .nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .nav-item .icon { width: 18px; text-align: center; font-size: 14px; }
+.nav-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 .sidebar-footer {
   margin-top: auto;

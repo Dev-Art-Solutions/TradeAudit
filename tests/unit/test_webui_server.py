@@ -57,6 +57,7 @@ def test_security_headers_and_origin_validation(client):
     assert res.headers["referrer-policy"] == "no-referrer"
     assert res.headers["cache-control"] == "no-store"
     assert "frame-ancestors 'none'" in res.headers["content-security-policy"]
+    assert len(res.headers["x-request-id"]) == 32
 
     rejected = client.post(
         "/api/settings",
@@ -75,6 +76,22 @@ def test_health_reports_runtime_dependencies(client):
         "database": "ok",
         "mt5": "DISCONNECTED",
     }
+
+
+def test_unhandled_error_is_redacted_and_correlated(test_settings, test_db_manager):
+    ctx = AppContext(settings=test_settings, db_manager=test_db_manager)
+    app = create_app(ctx, api_token=API_TOKEN)
+
+    @app.get("/api/test-crash")
+    def test_crash():
+        raise RuntimeError("sensitive implementation detail")
+
+    crash_client = TestClient(app, headers={"X-TradeAudit-Token": API_TOKEN})
+    res = crash_client.get("/api/test-crash")
+    assert res.status_code == 500
+    assert res.json()["detail"] == "Unexpected application error."
+    assert "sensitive implementation detail" not in res.text
+    assert res.json()["request_id"] == res.headers["x-request-id"]
 
 
 def test_payload_validation_and_log_bounds(client):

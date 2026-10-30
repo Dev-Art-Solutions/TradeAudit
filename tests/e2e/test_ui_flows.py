@@ -37,6 +37,16 @@ def test_sidebar_navigation_updates_all_tabs(page, live_server):
         assert page.text_content("#page-title") == heading
 
 
+def test_navigation_uses_consistent_svg_icons_and_skip_link(page, live_server):
+    page.goto(live_server["base_url"] + "/#dashboard")
+    page.wait_for_selector("#nav")
+    assert page.locator("#nav .nav-icon").count() == 10
+    page.keyboard.press("Tab")
+    assert page.evaluate("document.activeElement.matches('.skip-link')")
+    page.keyboard.press("Enter")
+    assert page.evaluate("document.activeElement.id === 'content'")
+
+
 def test_hashchange_navigation_rerenders_the_view(page, live_server):
     """
     Regression test: the SPA used to only re-render on sidebar clicks, not on

@@ -1,17 +1,34 @@
 // TradeAudit web UI - vanilla JS SPA talking to the FastAPI backend at /api/*.
 
 const NAV = [
-  { id: "dashboard", icon: "\u{1F4C8}", label: "Dashboard" },
-  { id: "trades", icon: "\u{1F4CA}", label: "Trades" },
-  { id: "strategies", icon: "\u{1F3AF}", label: "Strategies" },
-  { id: "strategy-vs-trader", icon: "\u2696\uFE0F", label: "Strategy vs Trader" },
-  { id: "breakdowns", icon: "\u{1F50D}", label: "Breakdowns" },
-  { id: "live-journal", icon: "\u{1F4DD}", label: "Live Journal" },
-  { id: "reports", icon: "\u{1F4C4}", label: "AI Reports" },
-  { id: "quant", icon: "\u{1F52C}", label: "Quant & Risk" },
-  { id: "trade-chart", icon: "\u{1F56F}\uFE0F", label: "Trade Chart" },
-  { id: "settings", icon: "\u2699\uFE0F", label: "MT5 Settings" },
+  { id: "dashboard", icon: "dashboard", label: "Dashboard" },
+  { id: "trades", icon: "trades", label: "Trades" },
+  { id: "strategies", icon: "target", label: "Strategies" },
+  { id: "strategy-vs-trader", icon: "balance", label: "Strategy vs Trader" },
+  { id: "breakdowns", icon: "search", label: "Breakdowns" },
+  { id: "live-journal", icon: "journal", label: "Live Journal" },
+  { id: "reports", icon: "report", label: "AI Reports" },
+  { id: "quant", icon: "risk", label: "Quant & Risk" },
+  { id: "trade-chart", icon: "chart", label: "Trade Chart" },
+  { id: "settings", icon: "settings", label: "MT5 Settings" },
 ];
+
+const ICONS = {
+  dashboard: '<path d="M4 13h6V4H4v9Zm0 7h6v-3H4v3Zm10 0h6v-9h-6v9Zm0-16v3h6V4h-6Z"/>',
+  trades: '<path d="M4 19V9m5 10V5m5 14v-7m5 7V3"/>',
+  target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="m14 10 6-6"/>',
+  balance: '<path d="M12 3v18M5 6h14M5 6l-3 7h6L5 6Zm14 0-3 7h6l-3-7ZM8 21h8"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  journal: '<path d="M5 3h12a2 2 0 0 1 2 2v16H7a2 2 0 0 1-2-2V3Zm2 14h12M9 7h6M9 11h6"/>',
+  report: '<path d="M6 3h9l3 3v15H6V3Zm8 0v4h4M9 11h6M9 15h6"/>',
+  risk: '<path d="M4 18 9 9l4 6 3-5 4 8H4Z"/><path d="M4 21h16"/>',
+  chart: '<path d="M4 19V5m0 14h16M7 15l4-4 3 2 5-7"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A8 8 0 0 0 15 6l-.3-2.6h-4L10.4 6A8 8 0 0 0 9 7.1l-2.4-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1A8 8 0 0 0 10.4 18l.3 2.6h4L15 18a8 8 0 0 0 1.5-1.1l2.4 1 2-3.4-2-1.5c.1-.3.1-.7.1-1Z"/>',
+};
+
+function navIcon(name) {
+  return `<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICONS[name]}</svg>`;
+}
 
 const PAGE_SUB = {
   dashboard: "Performance overview and equity curve",
@@ -115,7 +132,7 @@ function renderNav() {
   const nav = document.getElementById("nav");
   nav.innerHTML = NAV.map(
     (n) => `<button type="button" class="nav-item ${n.id === state.route ? "active" : ""}" data-route="${n.id}" ${n.id === state.route ? 'aria-current="page"' : ""}>
-      <span class="icon">${n.icon}</span><span>${n.label}</span>
+      <span class="icon">${navIcon(n.icon)}</span><span>${n.label}</span>
     </button>`
   ).join("");
   nav.querySelectorAll(".nav-item").forEach((el) => {
