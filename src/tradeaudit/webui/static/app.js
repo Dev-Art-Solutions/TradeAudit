@@ -114,9 +114,9 @@ function esc(s) { return (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&": 
 function renderNav() {
   const nav = document.getElementById("nav");
   nav.innerHTML = NAV.map(
-    (n) => `<div class="nav-item ${n.id === state.route ? "active" : ""}" data-route="${n.id}">
+    (n) => `<button type="button" class="nav-item ${n.id === state.route ? "active" : ""}" data-route="${n.id}" ${n.id === state.route ? 'aria-current="page"' : ""}>
       <span class="icon">${n.icon}</span><span>${n.label}</span>
-    </div>`
+    </button>`
   ).join("");
   nav.querySelectorAll(".nav-item").forEach((el) => {
     el.addEventListener("click", () => navigate(el.dataset.route));
@@ -266,6 +266,17 @@ async function viewDashboard() {
     return;
   }
   content().innerHTML = `
+    <section class="dashboard-intro" aria-labelledby="dashboard-heading">
+      <div>
+        <div class="eyebrow">Audit snapshot</div>
+        <h2 id="dashboard-heading">Performance at a glance</h2>
+        <p>A decision-focused view of edge, execution quality and downside risk.</p>
+      </div>
+      <div class="verdict-card">
+        <span>System verdict</span>
+        <strong>${esc(m.verdict.replace(/_/g, " "))}</strong>
+      </div>
+    </section>
     <div class="grid grid-4">
       <div class="kpi"><div class="kpi-label">Win Rate</div><div class="kpi-value">${fmtPct(m.win_rate)}</div><div class="kpi-sub">${m.winning_trades}W / ${m.losing_trades}L / ${m.breakeven_trades}BE</div></div>
       <div class="kpi"><div class="kpi-label">Net Profit</div><div class="kpi-value ${m.net_profit >= 0 ? "win" : "loss"}">${fmtNum(m.net_profit)}</div><div class="kpi-sub">${m.total_trades} total trades</div></div>
@@ -2532,6 +2543,7 @@ function syncFromHash() {
   renderNav();
   document.getElementById("page-title").textContent = NAV.find((n) => n.id === route).label;
   document.getElementById("page-sub").textContent = PAGE_SUB[route] || "";
+  document.title = `${NAV.find((n) => n.id === route).label} · TradeAudit`;
   return renderRoute();
 }
 

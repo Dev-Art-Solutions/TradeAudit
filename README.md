@@ -131,7 +131,14 @@ read-only analytics application: it does not place, modify, or close orders.
 ### 🔒 11. Security, Backups & Portability
 - Passwords stored securely in the **Windows Credential Locker** via the `keyring` API (never logged or stored in plaintext).
 - A per-session random token gates the local API, so no other process or webpage on the machine can drive the app without first loading its own UI.
-- Automated SQLite backups (WAL mode, enforced foreign keys) with one-click restore.
+- Strict request-size and payload validation, localhost Host/Origin enforcement, a restrictive Content Security Policy, and redacted security-aware logging.
+- SQLite runs in WAL mode with enforced foreign keys, lock timeouts, startup integrity checks, and one-click backups.
+- A runtime health endpoint verifies database readiness; the desktop shell waits for the API before opening and shuts down Uvicorn, MT5, and SQLite cleanly on exit.
+
+### ♿ 12. Accessible, Responsive Desktop UI
+- Semantic keyboard-focusable navigation with current-page announcements and live connection status.
+- Responsive layouts for compact windows, readable empty states with a clear next action, and reduced-motion support.
+- A decision-focused dashboard hierarchy that surfaces edge, execution quality, drawdown, and the current system verdict without decorative clutter.
 
 ---
 

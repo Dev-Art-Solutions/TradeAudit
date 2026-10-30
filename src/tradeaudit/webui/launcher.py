@@ -5,6 +5,7 @@ displayed inside a native pywebview window (no browser chrome).
 import logging
 import socket
 import threading
+import time
 
 import uvicorn
 import webview
@@ -52,15 +53,28 @@ class WebUIApplication:
         self.ctx = AppContext(settings=settings, db_manager=db_manager)
         self.app = create_app(self.ctx)
         self.port = _free_port()
+        self.server: "uvicorn.Server | None" = None
 
     def _run_server(self) -> None:
         config = uvicorn.Config(self.app, host="127.0.0.1", port=self.port, log_level="warning")
-        server = uvicorn.Server(config)
-        server.run()
+        self.server = uvicorn.Server(config)
+        self.server.run()
+
+    def _wait_until_ready(self, server_thread: threading.Thread, timeout: float = 10.0) -> None:
+        """Do not open the desktop shell until Uvicorn can actually serve it."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.server is not None and self.server.started:
+                return
+            if not server_thread.is_alive():
+                raise RuntimeError("TradeAudit local server stopped during startup.")
+            time.sleep(0.05)
+        raise RuntimeError("TradeAudit local server did not become ready within 10 seconds.")
 
     def run(self) -> int:
         server_thread = threading.Thread(target=self._run_server, daemon=True)
         server_thread.start()
+        self._wait_until_ready(server_thread)
 
         icon_path = get_resource_path("resources/icons/tradeaudit.ico")
         js_api = JsApi()
@@ -75,5 +89,15 @@ class WebUIApplication:
 
         js_api.window = webview.create_window(**window_kwargs)
         logger.info("Starting TradeAudit web UI on http://127.0.0.1:%s/", self.port)
-        webview.start()
-        return 0
+        try:
+            webview.start()
+            return 0
+        finally:
+            logger.info("Stopping TradeAudit web UI")
+            if self.server is not None:
+                self.server.should_exit = True
+            server_thread.join(timeout=5)
+            if server_thread.is_alive():
+                logger.warning("Local server did not stop within the shutdown timeout")
+            self.ctx.mt5_service.disconnect()
+            self.db_manager.close()

@@ -123,6 +123,11 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
             response.headers["Referrer-Policy"] = "no-referrer"
             response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
             response.headers["Cache-Control"] = "no-store"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; img-src 'self' data:; connect-src 'self'; "
+                "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+                "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+            )
             return response
 
         host = (request.url.hostname or "").lower()
@@ -162,6 +167,18 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         return trades, [t for t in trades if t.status == "CLOSED"]
 
     # ---------------------------------------------------------------- state
+
+    @app.get("/api/health")
+    def health():
+        database_ok = ctx.db_manager.check_connection()
+        if not database_ok:
+            raise HTTPException(status_code=503, detail="Database health check failed.")
+        return {
+            "status": "ok",
+            "version": ctx.settings.app_version,
+            "database": "ok",
+            "mt5": ctx.mt5_service.state.value,
+        }
 
     @app.get("/api/state")
     def get_state():

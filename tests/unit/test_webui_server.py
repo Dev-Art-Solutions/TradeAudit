@@ -56,6 +56,7 @@ def test_security_headers_and_origin_validation(client):
     assert res.headers["x-frame-options"] == "DENY"
     assert res.headers["referrer-policy"] == "no-referrer"
     assert res.headers["cache-control"] == "no-store"
+    assert "frame-ancestors 'none'" in res.headers["content-security-policy"]
 
     rejected = client.post(
         "/api/settings",
@@ -63,6 +64,17 @@ def test_security_headers_and_origin_validation(client):
         json={"login": 1},
     )
     assert rejected.status_code == 403
+
+
+def test_health_reports_runtime_dependencies(client):
+    res = client.get("/api/health")
+    assert res.status_code == 200
+    assert res.json() == {
+        "status": "ok",
+        "version": "0.1.0-test",
+        "database": "ok",
+        "mt5": "DISCONNECTED",
+    }
 
 
 def test_payload_validation_and_log_bounds(client):

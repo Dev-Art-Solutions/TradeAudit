@@ -16,7 +16,7 @@
           <div class="brand-sub">MT5 Performance Engine</div>
         </div>
       </div>
-      <nav class="nav-group" id="nav"></nav>
+      <nav class="nav-group" id="nav" aria-label="Primary navigation"></nav>
       <div class="sidebar-footer">
         <div id="version-footer"></div>
         <div class="disclaimer">Analytics only, not financial advice. Verify all figures independently before acting on them.</div>
@@ -26,10 +26,10 @@
     <div class="main">
       <div class="topbar">
         <div>
-          <h1 id="page-title">Dashboard</h1>
+          <h1 id="page-title" tabindex="-1">Dashboard</h1>
           <div class="topbar-sub" id="page-sub"></div>
         </div>
-        <div class="status-badge" id="status-badge">
+        <div class="status-badge" id="status-badge" role="status" aria-live="polite">
           <span class="status-dot"></span>
           <span id="status-text">Disconnected</span>
         </div>

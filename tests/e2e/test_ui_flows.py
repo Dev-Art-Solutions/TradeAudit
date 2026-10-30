@@ -16,6 +16,15 @@ def test_empty_dashboard_shows_onboarding_banner(page, live_server):
     assert page.is_visible("text=Get started with TradeAudit")
 
 
+def test_seeded_dashboard_has_portfolio_snapshot_and_accessible_nav(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#dashboard")
+    page.wait_for_selector("#dashboard-heading", timeout=10000)
+    assert page.text_content("#dashboard-heading") == "Performance at a glance"
+    assert page.is_visible(".verdict-card")
+    assert page.get_attribute('[data-route="dashboard"]', "aria-current") == "page"
+    assert page.title() == "Dashboard · TradeAudit"
+
+
 def test_sidebar_navigation_updates_all_tabs(page, live_server):
     page.goto(live_server["base_url"] + "/#dashboard")
     page.wait_for_selector("#nav")

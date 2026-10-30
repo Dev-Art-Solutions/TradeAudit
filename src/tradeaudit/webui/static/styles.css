@@ -31,7 +31,7 @@ html, body {
 #app {
   display: grid;
   grid-template-columns: 232px 1fr;
-  height: 100vh;
+  min-height: 100vh;
   overflow: hidden;
 }
 
@@ -59,7 +59,7 @@ html, body {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+  background: var(--accent-dim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -76,6 +76,9 @@ html, body {
 .nav-group { margin-bottom: 4px; }
 
 .nav-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -87,10 +90,13 @@ html, body {
   font-weight: 500;
   user-select: none;
   margin-bottom: 2px;
+  font-family: inherit;
+  text-align: left;
 }
 
 .nav-item:hover { background: var(--panel-2); color: var(--text); }
 .nav-item.active { background: rgba(88, 166, 255, 0.12); color: var(--accent); }
+.nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .nav-item .icon { width: 18px; text-align: center; font-size: 14px; }
 
 .sidebar-footer {
@@ -113,7 +119,7 @@ html, body {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  background: linear-gradient(135deg, rgba(88,166,255,0.1), rgba(88,166,255,0.03));
+  background: rgba(88,166,255,0.07);
   border: 1px solid rgba(88,166,255,0.35);
   border-radius: var(--radius);
   padding: 16px 20px;
@@ -171,6 +177,33 @@ html, body {
   padding: 24px;
 }
 
+.dashboard-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+.dashboard-intro .eyebrow {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.dashboard-intro h2 { margin: 0; font-size: 24px; line-height: 1.2; }
+.dashboard-intro p { margin: 7px 0 0; color: var(--text-dim); line-height: 1.5; }
+.verdict-card {
+  min-width: 190px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+.verdict-card span { display: block; color: var(--text-dim); font-size: 11px; margin-bottom: 4px; }
+.verdict-card strong { display: block; font-size: 13px; text-transform: capitalize; }
+
 /* ---------- generic building blocks ---------- */
 
 .card {
@@ -178,6 +211,7 @@ html, body {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   padding: 20px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.2);
 }
 
 .card + .card { margin-top: 16px; }
@@ -207,6 +241,7 @@ html, body {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   padding: 16px 18px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.2);
 }
 
 .kpi-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
@@ -317,6 +352,7 @@ tr:hover td { background: var(--panel-2); }
 .text-loss { color: var(--loss); }
 .text-dim { color: var(--text-dim); }
 .mono { font-variant-numeric: tabular-nums; }
+.kpi-value, td, .status-badge, .verdict-card { font-variant-numeric: tabular-nums; }
 
 .empty-state {
   text-align: center;
@@ -361,6 +397,24 @@ tr:hover td { background: var(--panel-2); }
 
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 1100px) { .two-col { grid-template-columns: 1fr; } }
+
+@media (max-width: 760px) {
+  #app { grid-template-columns: 76px 1fr; }
+  .sidebar { padding-inline: 8px; }
+  .brand { justify-content: center; padding-inline: 0; }
+  .brand-text, .nav-item span:not(.icon), .sidebar-footer { display: none; }
+  .nav-item { justify-content: center; padding-inline: 8px; }
+  .nav-item .icon { width: auto; }
+  .topbar, .content { padding-inline: 16px; }
+  .dashboard-intro { align-items: stretch; flex-direction: column; }
+  .verdict-card { min-width: 0; }
+  .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+  .onboarding-banner { align-items: stretch; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}
 
 canvas.chart-canvas { width: 100%; height: 220px; display: block; }
 
