@@ -57,3 +57,31 @@ jobs:
 
       - name: Run end-to-end tests
         run: pytest tests/e2e
+
+  package-smoke:
+    name: Windows package smoke test
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e .[build]
+
+      - name: Generate application assets
+        run: python -m scripts.generate_icons
+
+      - name: Build Windows bundle
+        run: pyinstaller --clean --noconfirm TradeAudit.spec
+
+      - name: Verify release bundle
+        run: python -m scripts.verify_release_bundle

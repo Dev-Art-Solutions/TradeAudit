@@ -24,6 +24,10 @@ trade log.
 
 ![TradeAudit Dashboard](docs/images/01-dashboard.png)
 
+The portfolio dashboard is captured from a deterministic synthetic dataset—no
+broker, account, or personal trading data is committed. It can be regenerated
+with `python -m scripts.capture_portfolio_screenshots`.
+
 ---
 
 ## 💡 The Core Problem TradeAudit Solves

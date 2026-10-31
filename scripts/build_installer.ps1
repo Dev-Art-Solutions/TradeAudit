@@ -1,6 +1,14 @@
 # PowerShell Build Pipeline for TradeAudit Windows Installer and Release Packages
 $ErrorActionPreference = "Stop"
 
+$pythonCommand = "python"
+$pythonArgs = @()
+$resolvedPython = Get-Command "python" -ErrorAction SilentlyContinue
+if (-not $resolvedPython -or $resolvedPython.Source -like "*WindowsApps*") {
+    $pythonCommand = "py"
+    $pythonArgs = @("-3")
+}
+
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host "       TradeAudit Release & Installer Build Pipeline" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
@@ -16,7 +24,7 @@ Write-Host "[SUCCESS] All unit tests passed." -ForegroundColor Green
 
 # 2. Asset Generation
 Write-Host "`n[2/5] Generating application icon assets..." -ForegroundColor Yellow
-python scripts\generate_icons.py
+& $pythonCommand @pythonArgs scripts\generate_icons.py
 
 # 3. PyInstaller Build
 Write-Host "`n[3/5] Packaging Windows executable with PyInstaller..." -ForegroundColor Yellow
@@ -28,6 +36,11 @@ if ($LASTEXITCODE -ne 0) {
 
 if (-not (Test-Path "dist\TradeAudit\TradeAudit.exe")) {
     Write-Host "[ERROR] Target executable dist\TradeAudit\TradeAudit.exe not found!" -ForegroundColor Red
+    exit 1
+}
+& $pythonCommand @pythonArgs scripts\verify_release_bundle.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[ERROR] Release bundle verification failed!" -ForegroundColor Red
     exit 1
 }
 Write-Host "[SUCCESS] PyInstaller build verified at dist\TradeAudit\TradeAudit.exe" -ForegroundColor Green

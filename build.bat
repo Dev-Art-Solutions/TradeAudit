@@ -59,6 +59,11 @@ if !ERRORLEVEL! neq 0 (
 
 echo [6/6] Verifying build output ...
 if exist "dist\TradeAudit\TradeAudit.exe" (
+    "%PY%" scripts\verify_release_bundle.py
+    if !ERRORLEVEL! neq 0 (
+        echo [ERROR] Release bundle verification failed!
+        exit /b 1
+    )
     echo =======================================================
     echo  BUILD SUCCESSFUL: dist\TradeAudit\TradeAudit.exe
     echo =======================================================
