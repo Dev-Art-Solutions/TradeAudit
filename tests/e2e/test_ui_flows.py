@@ -21,6 +21,8 @@ def test_seeded_dashboard_has_portfolio_snapshot_and_accessible_nav(page, live_s
     page.wait_for_selector("#dashboard-heading", timeout=10000)
     assert page.text_content("#dashboard-heading") == "Performance at a glance"
     assert page.is_visible(".verdict-card")
+    assert page.is_visible(".quality-card")
+    assert page.get_attribute('.quality-row:first-child [role="progressbar"]', "aria-valuemax") == "100"
     assert page.get_attribute('[data-route="dashboard"]', "aria-current") == "page"
     assert page.title() == "Dashboard · TradeAudit"
 

@@ -25,6 +25,7 @@ from tradeaudit.infrastructure.database.models import TradeModel
 from tradeaudit.domain.candles import TimeFrame
 from tradeaudit.domain.annotations import ChartAnnotation, AnnotationType, TradeJournalNote
 from tradeaudit.app.services.performance_analyzer import PerformanceAnalyzer
+from tradeaudit.app.services.data_quality_analyzer import DataQualityAnalyzer
 from tradeaudit.app.services.breakdown_analyzer import BreakdownAnalyzer
 from tradeaudit.app.services.strategy_trader_comparator import StrategyTraderComparator
 from tradeaudit.webui.context import AppContext
@@ -427,7 +428,12 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
                 account_info = ctx.mt5_service.get_account_info()
             except Exception:
                 account_info = None
-        return {"metrics": to_jsonable(metrics), "account": to_jsonable(account_info)}
+        quality = DataQualityAnalyzer.analyze(closed)
+        return {
+            "metrics": to_jsonable(metrics),
+            "data_quality": to_jsonable(quality),
+            "account": to_jsonable(account_info),
+        }
 
     # ---------------------------------------------------------- strategies
 

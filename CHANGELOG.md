@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Audit Data Quality scoring across risk, stop-loss, strategy-compliance, timing, and trader-review evidence.
+- Prioritized dashboard recommendations for incomplete datasets.
+- Unit and browser regression coverage for the new quality contract and visualization.
+
 ## 1.1.1 — 2026-10-27
 
 - Grant the GitHub release workflow permission to publish binary assets.

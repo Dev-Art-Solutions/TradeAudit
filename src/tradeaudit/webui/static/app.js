@@ -277,6 +277,7 @@ async function viewDashboard() {
     return;
   }
   const m = data.metrics;
+  const q = data.data_quality;
   if (!m.total_trades) {
     content().innerHTML = onboardingBannerHtml() +
       emptyState("\u{1F4C8}", "No trades yet", "Connect your MT5 account and run a sync from the Trades tab to see performance analytics here.");
@@ -325,6 +326,29 @@ async function viewDashboard() {
         <div class="kpi-sub">Max consecutive wins</div><div class="kpi-value win">${m.max_consecutive_wins}</div>
         <div class="kpi-sub" style="margin-top:8px">Max consecutive losses</div><div class="kpi-value loss">${m.max_consecutive_losses}</div></div>
     </div>
+    <section class="card quality-card" aria-labelledby="quality-heading">
+      <div class="quality-header">
+        <div>
+          <div class="eyebrow">Evidence readiness</div>
+          <div class="card-title" id="quality-heading">Audit Data Quality</div>
+          <p>${esc(q.summary)}</p>
+        </div>
+        <div class="quality-score" aria-label="Data quality score ${q.score} out of 100">
+          <strong>${q.score}</strong><span>/100</span><small>${esc(q.grade)}</small>
+        </div>
+      </div>
+      <div class="quality-grid">
+        ${q.dimensions.map((d) => `
+          <div class="quality-row">
+            <div><span>${esc(d.label)}</span><strong>${Math.round(d.coverage * 100)}%</strong></div>
+            <div class="quality-track" role="progressbar" aria-label="${esc(d.label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(d.coverage * 100)}">
+              <span style="width:${Math.round(d.coverage * 100)}%"></span>
+            </div>
+            <small>${d.complete} of ${d.total} trades</small>
+          </div>`).join("")}
+      </div>
+      ${q.actions.length ? `<div class="quality-actions"><strong>Recommended next steps</strong><ul>${q.actions.map((action) => `<li>${esc(action)}</li>`).join("")}</ul></div>` : ""}
+    </section>
   `;
   drawLineChart(document.getElementById("chart-r"), m.cumulative_r_series, { color: "#58a6ff" });
   drawLineChart(document.getElementById("chart-money"), m.cumulative_monetary_series, { color: "#26a69a" });

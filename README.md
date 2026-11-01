@@ -146,6 +146,11 @@ read-only analytics application: it does not place, modify, or close orders.
 - Responsive layouts for compact windows, readable empty states with a clear next action, and reduced-motion support.
 - A decision-focused dashboard hierarchy that surfaces edge, execution quality, drawdown, and the current system verdict without decorative clutter.
 
+### ✅ 13. Audit Data Quality & Evidence Readiness
+- A weighted completeness score makes missing evidence visible before a trader relies on performance conclusions.
+- Coverage is tracked independently for R-multiples, initial stop losses, strategy compliance, trade timing, and behavioral review context.
+- The dashboard turns weak coverage into prioritized, actionable next steps instead of silently calculating around incomplete records.
+
 ---
 
 ## 🖥️ Architecture
