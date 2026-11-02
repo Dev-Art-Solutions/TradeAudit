@@ -7,6 +7,8 @@
 - Audit Data Quality scoring across risk, stop-loss, strategy-compliance, timing, and trader-review evidence.
 - Prioritized dashboard recommendations for incomplete datasets.
 - Unit and browser regression coverage for the new quality contract and visualization.
+- Privacy-safe runtime diagnostics covering database, storage, disk, backups, and the MT5 adapter.
+- An in-app operational readiness panel and downloadable diagnostics snapshot for support workflows.
 
 ## 1.1.1 — 2026-10-27
 

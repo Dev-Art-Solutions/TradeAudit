@@ -78,6 +78,13 @@ def test_settings_save_round_trip(page, live_server):
     assert page.input_value("#f-server") == "Example-Server"
 
 
+def test_settings_exposes_runtime_diagnostics(page, live_server):
+    page.goto(live_server["base_url"] + "/#settings")
+    page.wait_for_selector(".diagnostics-grid", timeout=10000)
+    assert page.locator(".diagnostic-check").count() == 5
+    assert page.is_enabled("#btn-export-diagnostics")
+
+
 def test_connect_without_mt5_shows_clean_error_not_a_crash(page, live_server):
     # If the MetaTrader5 package happens to be installed (e.g. a dev machine
     # that's also used for live-account testing), mt5.initialize() against a

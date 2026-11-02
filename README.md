@@ -151,6 +151,13 @@ read-only analytics application: it does not place, modify, or close orders.
 - Coverage is tracked independently for R-multiples, initial stop losses, strategy compliance, trade timing, and behavioral review context.
 - The dashboard turns weak coverage into prioritized, actionable next steps instead of silently calculating around incomplete records.
 
+### 🩺 14. Runtime Diagnostics & Supportability
+- A built-in operational panel checks database integrity, writable storage, disk headroom, backup freshness, and MT5 adapter state.
+- Users can export a privacy-safe JSON support snapshot that excludes credentials and account identifiers.
+- Readiness is summarized as ready, degraded, or attention-required so deployment issues are visible before they become data-loss incidents.
+
+![TradeAudit Runtime Diagnostics](docs/images/06-system-health.png)
+
 ---
 
 ## 🖥️ Architecture

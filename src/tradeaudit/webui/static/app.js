@@ -818,8 +818,9 @@ function showTransientBanner(message, ok) {
 // ------------------------------------------------------------------ settings
 
 async function viewSettings() {
-  let s;
-  try { s = await apiGet("/state"); } catch (e) { s = null; }
+  let s, diagnostics;
+  try { [s, diagnostics] = await Promise.all([apiGet("/state"), apiGet("/diagnostics")]); }
+  catch (e) { s = null; diagnostics = null; }
   const settings = (s && s.settings) || { mt5_path: "", login: 0, server: "", timeout_ms: 60000 };
   const connected = s && s.connection_state === "CONNECTED";
 
@@ -880,10 +881,24 @@ async function viewSettings() {
 
     <div class="card">
       <div class="card-title">\u{1F6E0}️ Diagnostics</div>
-      <div class="kpi-sub" style="margin-bottom:14px">
-        Something not working? Show the recent log and copy it into a support message or bug report.
+      ${diagnostics ? `
+        <div class="diagnostics-head">
+          <div><div class="eyebrow">Operational readiness</div><strong>${esc(diagnostics.overall.toUpperCase())}</strong></div>
+          <span>v${esc(diagnostics.app_version)} · Python ${esc(diagnostics.runtime.python)} · ${esc(diagnostics.runtime.architecture)}</span>
+        </div>
+        <div class="diagnostics-grid">
+          ${diagnostics.checks.map((check) => `
+            <div class="diagnostic-check ${esc(check.status)}">
+              <span class="diagnostic-dot" aria-hidden="true"></span>
+              <div><strong>${esc(check.label)}</strong><small>${esc(check.detail)}</small></div>
+              <span class="diagnostic-status">${esc(check.status)}</span>
+            </div>`).join("")}
+        </div>` : `<div class="banner error">Diagnostics are temporarily unavailable.</div>`}
+      <div class="kpi-sub" style="margin:16px 0 14px">
+        Export a privacy-safe runtime snapshot or inspect the recent log for support. Credentials and account identifiers are excluded.
       </div>
       <div class="btn-row" style="margin-top:0">
+        <button class="btn" id="btn-export-diagnostics" ${diagnostics ? "" : "disabled"}>Export Diagnostics JSON</button>
         <button class="btn" id="btn-show-log">View Recent Log</button>
         <button class="btn" id="btn-copy-log" style="display:none">Copy to Clipboard</button>
       </div>
@@ -965,6 +980,20 @@ async function viewSettings() {
     } catch (e) {
       showTransientBanner(e.message, false);
     }
+  });
+
+  document.getElementById("btn-export-diagnostics").addEventListener("click", () => {
+    if (!diagnostics) return;
+    const blob = new Blob([JSON.stringify(diagnostics, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `tradeaudit-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showTransientBanner("Privacy-safe diagnostics exported.", true);
   });
 
   document.getElementById("btn-copy-log").addEventListener("click", async () => {

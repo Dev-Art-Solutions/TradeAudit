@@ -60,7 +60,7 @@ def _demo_trades(account_id: int, count: int = 180) -> list[Trade]:
     return trades
 
 
-def capture(output_dir: Path) -> Path:
+def capture(output_dir: Path) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="tradeaudit-portfolio-") as tmp:
         data_dir = Path(tmp)
@@ -91,6 +91,7 @@ def capture(output_dir: Path) -> Path:
             raise RuntimeError("Screenshot server failed to start.")
 
         dashboard = output_dir / "01-dashboard.png"
+        diagnostics = output_dir / "06-system-health.png"
         try:
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch()
@@ -102,20 +103,26 @@ def capture(output_dir: Path) -> Path:
                 page.wait_for_selector("#dashboard-heading", timeout=15_000)
                 page.wait_for_timeout(500)
                 page.screenshot(path=str(dashboard), full_page=False)
+                page.goto(f"http://127.0.0.1:{port}/#settings")
+                page.wait_for_selector(".diagnostics-grid", timeout=15_000)
+                page.locator(".diagnostics-grid").scroll_into_view_if_needed()
+                page.wait_for_timeout(300)
+                page.screenshot(path=str(diagnostics), full_page=False)
                 browser.close()
         finally:
             server.should_exit = True
             thread.join(timeout=5)
             database.close()
-        return dashboard
+        return [dashboard, diagnostics]
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=Path("docs/images"))
     args = parser.parse_args()
-    screenshot = capture(args.output_dir.resolve())
-    print(f"Captured {screenshot}")
+    screenshots = capture(args.output_dir.resolve())
+    for screenshot in screenshots:
+        print(f"Captured {screenshot}")
     return 0
 
 

@@ -26,6 +26,7 @@ from tradeaudit.domain.candles import TimeFrame
 from tradeaudit.domain.annotations import ChartAnnotation, AnnotationType, TradeJournalNote
 from tradeaudit.app.services.performance_analyzer import PerformanceAnalyzer
 from tradeaudit.app.services.data_quality_analyzer import DataQualityAnalyzer
+from tradeaudit.app.services.diagnostics_service import DiagnosticsService
 from tradeaudit.app.services.breakdown_analyzer import BreakdownAnalyzer
 from tradeaudit.app.services.strategy_trader_comparator import StrategyTraderComparator
 from tradeaudit.webui.context import AppContext
@@ -331,6 +332,19 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         with open(log_path, "r", encoding="utf-8", errors="replace") as f:
             all_lines = f.readlines()
         return {"path": str(log_path), "lines": [l.rstrip("\n") for l in all_lines[-lines:]]}
+
+    @app.get("/api/diagnostics")
+    def diagnostics():
+        """Return a credential-free operational snapshot for support."""
+        service = DiagnosticsService(
+            app_version=ctx.settings.app_version,
+            environment=ctx.settings.env,
+            data_dir=ctx.settings.data_dir,
+            database_check=ctx.db_manager.check_connection,
+            mt5_state=lambda: ctx.mt5_service.state.value,
+            backups=ctx.backup_service.list_backups,
+        )
+        return service.collect().as_dict()
 
     # --------------------------------------------------------------- trades
 

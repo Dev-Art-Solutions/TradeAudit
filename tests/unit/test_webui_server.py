@@ -180,6 +180,17 @@ def test_recent_logs_endpoint_returns_a_list(client):
     assert isinstance(body["lines"], list)
 
 
+def test_diagnostics_are_operational_and_privacy_safe(client):
+    res = client.get("/api/diagnostics")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["overall"] in {"ready", "degraded", "attention"}
+    assert {check["key"] for check in body["checks"]} == {"database", "storage", "disk", "backup", "mt5"}
+    serialized = res.text.lower()
+    assert "password" not in serialized
+    assert "account_id" not in serialized
+
+
 @pytest.fixture
 def existing_trade_id(test_settings, test_db_manager):
     """Journal notes/annotations have a real FK to trades - seed one to reference."""
