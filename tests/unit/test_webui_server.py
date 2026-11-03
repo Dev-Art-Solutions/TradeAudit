@@ -120,6 +120,17 @@ def test_trades_and_dashboard_empty_before_any_sync(client):
     assert dashboard.status_code == 200
     assert dashboard.json()["metrics"]["total_trades"] == 0
     assert dashboard.json()["data_quality"]["grade"] == "N/A"
+    assert len(dashboard.json()["audit_snapshot"]["dataset_sha256"]) == 64
+
+
+def test_audit_snapshot_is_privacy_safe_and_versioned(client):
+    res = client.get("/api/audit-snapshot")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["schema_version"] == 1
+    assert len(body["dataset_sha256"]) == 64
+    assert "account_id" not in res.text.lower()
+    assert "position_id" not in res.text.lower()
 
 
 def test_sync_without_saved_settings_returns_400(client):

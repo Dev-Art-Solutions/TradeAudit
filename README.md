@@ -158,6 +158,13 @@ read-only analytics application: it does not place, modify, or close orders.
 
 ![TradeAudit Runtime Diagnostics](docs/images/06-system-health.png)
 
+### 🔏 15. Verifiable Audit Evidence
+- Every dashboard audit can be exported as a versioned, privacy-safe JSON evidence snapshot.
+- A deterministic SHA-256 fingerprint changes when an audited trade value changes, while remaining stable across record ordering and internal account identifiers.
+- The snapshot packages the audit period, aggregate performance, data-quality coverage, and application version for reproducible reviews and support handoffs.
+
+![TradeAudit Verifiable Audit Evidence](docs/images/07-audit-evidence.png)
+
 ---
 
 ## 🖥️ Architecture

@@ -92,6 +92,7 @@ def capture(output_dir: Path) -> list[Path]:
 
         dashboard = output_dir / "01-dashboard.png"
         diagnostics = output_dir / "06-system-health.png"
+        evidence = output_dir / "07-audit-evidence.png"
         try:
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch()
@@ -103,8 +104,20 @@ def capture(output_dir: Path) -> list[Path]:
                 page.wait_for_selector("#dashboard-heading", timeout=15_000)
                 page.wait_for_timeout(500)
                 page.screenshot(path=str(dashboard), full_page=False)
+                page.locator(".evidence-strip").scroll_into_view_if_needed()
+                page.wait_for_timeout(300)
+                page.screenshot(path=str(evidence), full_page=False)
                 page.goto(f"http://127.0.0.1:{port}/#settings")
                 page.wait_for_selector(".diagnostics-grid", timeout=15_000)
+                # Keep the committed portfolio image reproducible and free of
+                # workstation-specific temp paths / volatile disk figures.
+                page.locator(".card").nth(1).locator(".kpi-sub").evaluate(
+                    "el => el.innerHTML = 'Data Directory: <span class=\"mono\">%LOCALAPPDATA%\\\\TradeAudit</span><br>' +"
+                    "'Database: <span class=\"mono\">sqlite:///.../tradeaudit.db</span>'"
+                )
+                page.locator(".diagnostic-check", has_text="Free disk space").locator("small").evaluate(
+                    "el => el.textContent = 'Healthy storage headroom available.'"
+                )
                 page.locator(".diagnostics-grid").scroll_into_view_if_needed()
                 page.wait_for_timeout(300)
                 page.screenshot(path=str(diagnostics), full_page=False)
@@ -113,7 +126,7 @@ def capture(output_dir: Path) -> list[Path]:
             server.should_exit = True
             thread.join(timeout=5)
             database.close()
-        return [dashboard, diagnostics]
+        return [dashboard, diagnostics, evidence]
 
 
 def main() -> int:

@@ -278,6 +278,7 @@ async function viewDashboard() {
   }
   const m = data.metrics;
   const q = data.data_quality;
+  const snapshot = data.audit_snapshot;
   if (!m.total_trades) {
     content().innerHTML = onboardingBannerHtml() +
       emptyState("\u{1F4C8}", "No trades yet", "Connect your MT5 account and run a sync from the Trades tab to see performance analytics here.");
@@ -348,8 +349,28 @@ async function viewDashboard() {
           </div>`).join("")}
       </div>
       ${q.actions.length ? `<div class="quality-actions"><strong>Recommended next steps</strong><ul>${q.actions.map((action) => `<li>${esc(action)}</li>`).join("")}</ul></div>` : ""}
+      <div class="evidence-strip">
+        <div>
+          <span>Dataset fingerprint · SHA-256</span>
+          <code title="${esc(snapshot.dataset_sha256)}">${esc(snapshot.dataset_sha256.slice(0, 16))}…${esc(snapshot.dataset_sha256.slice(-12))}</code>
+        </div>
+        <div class="evidence-meta">Schema v${snapshot.schema_version} · ${snapshot.trade_count} closed trades</div>
+        <button class="btn" id="btn-export-snapshot">Export Evidence Snapshot</button>
+      </div>
     </section>
   `;
+  document.getElementById("btn-export-snapshot").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `tradeaudit-audit-snapshot-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showTransientBanner("Verifiable audit evidence snapshot exported.", true);
+  });
   drawLineChart(document.getElementById("chart-r"), m.cumulative_r_series, { color: "#58a6ff" });
   drawLineChart(document.getElementById("chart-money"), m.cumulative_monetary_series, { color: "#26a69a" });
 }

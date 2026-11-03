@@ -27,6 +27,7 @@ from tradeaudit.domain.annotations import ChartAnnotation, AnnotationType, Trade
 from tradeaudit.app.services.performance_analyzer import PerformanceAnalyzer
 from tradeaudit.app.services.data_quality_analyzer import DataQualityAnalyzer
 from tradeaudit.app.services.diagnostics_service import DiagnosticsService
+from tradeaudit.app.services.audit_snapshot_service import AuditSnapshotService
 from tradeaudit.app.services.breakdown_analyzer import BreakdownAnalyzer
 from tradeaudit.app.services.strategy_trader_comparator import StrategyTraderComparator
 from tradeaudit.webui.context import AppContext
@@ -443,11 +444,19 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
             except Exception:
                 account_info = None
         quality = DataQualityAnalyzer.analyze(closed)
+        snapshot = AuditSnapshotService.build(closed, ctx.settings.app_version)
         return {
             "metrics": to_jsonable(metrics),
             "data_quality": to_jsonable(quality),
+            "audit_snapshot": snapshot.as_dict(),
             "account": to_jsonable(account_info),
         }
+
+    @app.get("/api/audit-snapshot")
+    def audit_snapshot():
+        """Return a reproducible aggregate snapshot with a dataset fingerprint."""
+        _, closed = closed_trades()
+        return AuditSnapshotService.build(closed, ctx.settings.app_version).as_dict()
 
     # ---------------------------------------------------------- strategies
 

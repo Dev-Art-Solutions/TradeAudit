@@ -9,6 +9,7 @@
 - Unit and browser regression coverage for the new quality contract and visualization.
 - Privacy-safe runtime diagnostics covering database, storage, disk, backups, and the MT5 adapter.
 - An in-app operational readiness panel and downloadable diagnostics snapshot for support workflows.
+- Versioned audit evidence snapshots with deterministic SHA-256 dataset fingerprints and no account identifiers.
 
 ## 1.1.1 — 2026-10-27
 
