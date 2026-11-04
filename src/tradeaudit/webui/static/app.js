@@ -352,13 +352,24 @@ async function viewDashboard() {
       <div class="evidence-strip">
         <div>
           <span>Dataset fingerprint · SHA-256</span>
-          <code title="${esc(snapshot.dataset_sha256)}">${esc(snapshot.dataset_sha256.slice(0, 16))}…${esc(snapshot.dataset_sha256.slice(-12))}</code>
+          <code id="evidence-fingerprint" class="clickable-code" title="Click to copy full SHA-256 fingerprint">${esc(snapshot.dataset_sha256.slice(0, 16))}…${esc(snapshot.dataset_sha256.slice(-12))}</code>
         </div>
         <div class="evidence-meta">Schema v${snapshot.schema_version} · ${snapshot.trade_count} closed trades</div>
+        <button class="btn" id="btn-copy-fingerprint" title="Copy full SHA-256 fingerprint">Copy Hash</button>
         <button class="btn" id="btn-export-snapshot">Export Evidence Snapshot</button>
       </div>
     </section>
   `;
+  const copyFingerprint = async () => {
+    try {
+      await navigator.clipboard.writeText(snapshot.dataset_sha256);
+      showTransientBanner("Dataset fingerprint SHA-256 copied to clipboard.", true);
+    } catch (e) {
+      showTransientBanner("Could not copy fingerprint: " + e.message, false);
+    }
+  };
+  document.getElementById("btn-copy-fingerprint").addEventListener("click", copyFingerprint);
+  document.getElementById("evidence-fingerprint").addEventListener("click", copyFingerprint);
   document.getElementById("btn-export-snapshot").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);

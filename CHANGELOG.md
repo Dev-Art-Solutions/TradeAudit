@@ -9,7 +9,9 @@
 - Unit and browser regression coverage for the new quality contract and visualization.
 - Privacy-safe runtime diagnostics covering database, storage, disk, backups, and the MT5 adapter.
 - An in-app operational readiness panel and downloadable diagnostics snapshot for support workflows.
-- Versioned audit evidence snapshots with deterministic SHA-256 dataset fingerprints and no account identifiers.
+- Versioned audit evidence snapshots with deterministic SHA-256 dataset fingerprints and no account identifiers.
+- Verifiable dataset fingerprint and audit data quality scoring embedded into generated Markdown reports.
+- One-click copy interaction and visual indicator for the audit evidence SHA-256 fingerprint on the dashboard.
 
 ## 1.1.1 — 2026-10-27
 

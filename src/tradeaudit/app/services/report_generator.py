@@ -38,6 +38,8 @@ from tradeaudit.domain.report import (
 from tradeaudit.app.services.performance_analyzer import PerformanceAnalyzer
 from tradeaudit.app.services.strategy_trader_comparator import StrategyTraderComparator
 from tradeaudit.app.services.breakdown_analyzer import BreakdownAnalyzer, AdvancedBreakdownResults
+from tradeaudit.app.services.data_quality_analyzer import DataQualityAnalyzer, DataQualityReport
+from tradeaudit.app.services.audit_snapshot_service import AuditSnapshotService, AuditSnapshot
 
 
 class MarkdownReportGenerator:
@@ -73,19 +75,23 @@ class MarkdownReportGenerator:
         metrics = PerformanceAnalyzer.analyze(closed_trades)
         comparison = StrategyTraderComparator.compare(closed_trades)
         breakdowns = BreakdownAnalyzer.analyze_all(closed_trades)
+        quality = DataQualityAnalyzer.analyze(closed_trades)
+        snapshot = AuditSnapshotService.build(closed_trades, self.app_version)
 
         # 3. Assemble report sections
         sections: List[str] = []
 
         # YAML Frontmatter
-        sections.append(self._build_metadata_header(config, account_info))
+        sections.append(self._build_metadata_header(config, account_info, quality, snapshot))
 
         # Title
         title_suffix = f" — {config.export_type.value} Audit Report"
         sections.append(f"# 📊 TradeAudit Performance & Execution Intelligence{title_suffix}\n")
 
         # Executive Summary
-        sections.append(self._build_executive_summary(metrics, comparison, len(closed_trades), len(filtered_trades)))
+        sections.append(self._build_executive_summary(
+            metrics, comparison, len(closed_trades), len(filtered_trades), quality, snapshot
+        ))
 
         # Strategy vs Trader Execution Quality
         sections.append(self._build_strategy_trader_section(comparison))
@@ -139,7 +145,13 @@ class MarkdownReportGenerator:
             return f"#{position_id}"
         return f"T-{str(position_id)[-4:]}"
 
-    def _build_metadata_header(self, config: ReportConfig, account_info: Optional[MT5AccountInfo]) -> str:
+    def _build_metadata_header(
+        self,
+        config: ReportConfig,
+        account_info: Optional[MT5AccountInfo],
+        quality: Optional[DataQualityReport] = None,
+        snapshot: Optional[AuditSnapshot] = None,
+    ) -> str:
         gen_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         acc_str = self._mask_account(account_info.login if account_info else 0, config.privacy)
         broker_str = self._mask_broker(
@@ -151,6 +163,9 @@ class MarkdownReportGenerator:
         sym_str = ", ".join(config.filters.symbols) if config.filters.symbols else "ALL"
         strat_str = str(config.filters.strategy_id) if config.filters.strategy_id is not None else "ALL"
         comp_str = config.filters.compliance_status or "ALL"
+        sha_str = snapshot.dataset_sha256 if snapshot else "N/A"
+        q_score = quality.score if quality else 0
+        q_grade = quality.grade if quality else "N/A"
 
         return f"""---
 report_version: {config.report_version}
@@ -158,6 +173,9 @@ application: TradeAudit
 app_version: {self.app_version}
 export_type: {config.export_type.value}
 generated_at: '{gen_time}'
+dataset_sha256: '{sha_str}'
+data_quality_score: {q_score}
+data_quality_grade: '{q_grade}'
 account: '{acc_str}'
 broker: '{broker_str}'
 filters_applied:
@@ -174,7 +192,9 @@ filters_applied:
         m: PerformanceMetrics,
         c: StrategyVsTraderComparison,
         closed_count: int,
-        total_count: int
+        total_count: int,
+        quality: Optional[DataQualityReport] = None,
+        snapshot: Optional[AuditSnapshot] = None,
     ) -> str:
         verdict_badge = {
             ProfitabilityVerdict.POSITIVE_EXPECTANCY: "🟢 **POSITIVE EXPECTANCY (Profitable Edge)**",
@@ -203,8 +223,12 @@ filters_applied:
             f"| **Max Drawdown ($)** | `${m.max_drawdown_monetary:,.2f}` | Peak-to-trough monetary drawdown |",
             f"| **Recovery Factor** | `{m.recovery_factor if m.recovery_factor is not None else 'N/A'}` | Net profit / absolute maximum monetary drawdown |",
             f"| **Trade Duration** | `{m.avg_duration_minutes if m.avg_duration_minutes is not None else 'N/A'} min avg` | {m.trades_with_duration}/{m.total_trades} closed trades have valid timestamps |",
-            f"| **Consecutive Streaks** | `{m.max_consecutive_wins} Wins` / `{m.max_consecutive_losses} Losses` | Max streak duration |"
+            f"| **Consecutive Streaks** | `{m.max_consecutive_wins} Wins` / `{m.max_consecutive_losses} Losses` | Max streak duration |",
         ]
+        if quality:
+            lines.append(f"| **Audit Data Quality** | `{quality.score}/100 ({quality.grade})` | {quality.summary} |")
+        if snapshot:
+            lines.append(f"| **Evidence Fingerprint** | `{snapshot.dataset_sha256[:16]}...{snapshot.dataset_sha256[-12:]}` | SHA-256 verifiable dataset hash |")
         return "\n".join(lines)
 
     def _build_strategy_trader_section(self, c: StrategyVsTraderComparison) -> str:

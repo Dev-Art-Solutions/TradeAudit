@@ -183,12 +183,16 @@ def test_generate_summary_report(sample_trades, sample_account, sample_strategie
     assert "---" in report
     assert "report_version: 1" in report
     assert "export_type: Summary" in report
+    assert "dataset_sha256:" in report
+    assert "data_quality_score:" in report
     assert "account: '***4567'" in report
     assert "broker: '[Broker Details Anonymized]'" in report
 
     # Check Sections
     assert "# 📊 TradeAudit Performance & Execution Intelligence — Summary Audit Report" in report
     assert "## 1. Executive Summary" in report
+    assert "Audit Data Quality" in report
+    assert "Evidence Fingerprint" in report
     assert "## 2. Strategy Edge vs. Trader Execution" in report
     assert "## 3. Four-Quadrant Execution Quality Analysis" in report
     assert "## 4. Behavioral & Discipline Intelligence" in report

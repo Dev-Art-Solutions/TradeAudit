@@ -313,3 +313,15 @@ def test_assign_strategy_and_emotion_and_csv_export(client, existing_trade_id):
     assert csv_res.status_code == 200
     assert "text/csv" in csv_res.headers.get("content-type", "")
     assert "EURUSD" in csv_res.text
+
+
+def test_report_endpoint_returns_markdown_with_evidence_and_data_quality(client, existing_trade_id):
+    res = client.get("/api/report")
+    assert res.status_code == 200
+    body = res.json()
+    assert "markdown" in body
+    markdown = body["markdown"]
+    assert "dataset_sha256:" in markdown
+    assert "data_quality_score:" in markdown
+    assert "Audit Data Quality" in markdown
+    assert "Evidence Fingerprint" in markdown

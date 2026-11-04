@@ -295,6 +295,8 @@ html, body {
 .evidence-strip > div:first-child { min-width: 0; flex: 1; }
 .evidence-strip span { display: block; color: var(--text-faint); font-size: 10px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
 .evidence-strip code { color: var(--accent); font-size: 12px; overflow-wrap: anywhere; }
+.evidence-strip code.clickable-code { cursor: pointer; transition: color .15s ease; }
+.evidence-strip code.clickable-code:hover { color: #fff; text-decoration: underline; }
 .evidence-meta { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 
 .diagnostics-head { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 14px; }
