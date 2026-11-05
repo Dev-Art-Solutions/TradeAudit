@@ -138,6 +138,7 @@ read-only analytics application: it does not place, modify, or close orders.
 - Strict request-size and payload validation, localhost Host/Origin enforcement, a restrictive Content Security Policy, and redacted security-aware logging.
 - Correlated request IDs and latency-aware failure logging make production diagnostics actionable without exposing implementation details to the UI.
 - SQLite runs in WAL mode with enforced foreign keys, lock timeouts, startup integrity checks, and one-click backups.
+- Every history sync is guarded by a recent SQLite safety snapshot; sync is canceled if protection cannot be established, and retention keeps the latest 10 backups without unbounded growth.
 - A runtime health endpoint verifies database readiness; the desktop shell waits for the API before opening and shuts down Uvicorn, MT5, and SQLite cleanly on exit.
 
 ### ♿ 12. Accessible, Responsive Desktop UI

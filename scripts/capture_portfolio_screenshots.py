@@ -113,7 +113,8 @@ def capture(output_dir: Path) -> list[Path]:
                 # workstation-specific temp paths / volatile disk figures.
                 page.locator(".card").nth(1).locator(".kpi-sub").evaluate(
                     "el => el.innerHTML = 'Data Directory: <span class=\"mono\">%LOCALAPPDATA%\\\\TradeAudit</span><br>' +"
-                    "'Database: <span class=\"mono\">sqlite:///.../tradeaudit.db</span>'"
+                    "'Database: <span class=\"mono\">sqlite:///.../tradeaudit.db</span><br>' +"
+                    "'Protection policy: automatic pre-sync snapshot (at most once per 24h), retaining the latest 10 backups.'"
                 )
                 page.locator(".diagnostic-check", has_text="Free disk space").locator("small").evaluate(
                     "el => el.textContent = 'Healthy storage headroom available.'"

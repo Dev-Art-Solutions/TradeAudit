@@ -821,7 +821,10 @@ async function doSync() {
     const result = await apiPost("/sync", {});
     await loadTrades();
     renderTradesTable();
-    showTransientBanner(result.message || "Sync complete", true);
+    const protectedBy = result.backup_protection && result.backup_protection.created
+      ? ` Safety snapshot: ${result.backup_protection.filename}.`
+      : " Recent safety snapshot verified.";
+    showTransientBanner((result.message || "Sync complete") + protectedBy, true);
   } catch (e) {
     showTransientBanner(e.message, false);
   } finally {
@@ -904,7 +907,8 @@ async function viewSettings() {
       <div class="card-title">\u{1F4E6} Storage & Database Backups</div>
       <div class="kpi-sub" style="margin-bottom:14px">
         Data Directory: <span class="mono">${esc(s ? s.storage.data_dir : "")}</span><br/>
-        Database: <span class="mono">${esc(s ? s.storage.database_url : "")}</span>
+        Database: <span class="mono">${esc(s ? s.storage.database_url : "")}</span><br/>
+        Protection policy: automatic pre-sync snapshot (at most once per 24h), retaining the latest 10 backups.
       </div>
       <div class="btn-row" style="margin-top:0">
         <button class="btn" id="btn-backup">\u{1F4BE} Create Backup Now</button>
@@ -997,7 +1001,8 @@ async function viewSettings() {
   document.getElementById("btn-backup").addEventListener("click", async () => {
     try {
       const res = await apiPost("/backup", {});
-      showTransientBanner("Backup created: " + res.path, true);
+      const retention = res.pruned ? ` · ${res.pruned} old backup(s) pruned` : "";
+      showTransientBanner("Backup created: " + res.path + retention, true);
     } catch (e) { showTransientBanner(e.message, false); }
   });
 

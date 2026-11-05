@@ -107,6 +107,7 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
     app = FastAPI(title="TradeAudit API")
+    app.state.tradeaudit_context = ctx
     quant_cache: dict = {}
 
     # This server binds to 127.0.0.1 only, but "only reachable from this machine"
@@ -301,6 +302,17 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
             except Exception:
                 account_info = None
 
+        try:
+            protection = ctx.backup_service.ensure_recent_backup(
+                tag="pre_sync", max_age_hours=24, keep_count=10
+            )
+        except Exception:
+            logger.exception("Pre-sync safety backup failed; synchronization canceled")
+            raise HTTPException(
+                status_code=503,
+                detail="Safety backup failed, so synchronization was canceled. Review Diagnostics and the application log.",
+            )
+
         result = ctx.sync_service.sync_account_history(account_id=saved.login, account_info=account_info)
         if result.success:
             quant_cache.clear()
@@ -309,16 +321,23 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
                 ctx.behavior_service.run_behavior_analysis_for_account(saved.login)
             except Exception as e:
                 logger.warning("Post-sync compliance/behavior evaluation warning: %s", e)
-        return to_jsonable(result)
+        payload = to_jsonable(result)
+        payload["backup_protection"] = {
+            "created": protection.created,
+            "filename": protection.path.name,
+            "pruned": protection.pruned,
+        }
+        return payload
 
     @app.post("/api/backup")
     def backup():
         try:
             path = ctx.backup_service.create_backup(tag="manual")
+            pruned = ctx.backup_service.clean_old_backups(keep_count=10)
         except Exception:
             logger.exception("Manual backup failed")
             raise HTTPException(status_code=500, detail="Backup failed. See application logs.")
-        return {"path": str(path)}
+        return {"path": str(path), "filename": path.name, "pruned": pruned}
 
     @app.get("/api/logs/recent")
     def recent_logs(lines: int = Query(default=300, ge=1, le=2000)):

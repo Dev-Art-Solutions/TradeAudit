@@ -17,7 +17,7 @@ from tradeaudit.app.services.behavior_analyzer import BehaviorAnalyzer
 from tradeaudit.app.services.behavior_service import BehaviorService
 from tradeaudit.app.services.live_position_watcher import LivePositionWatcherService
 from tradeaudit.app.services.report_generator import MarkdownReportGenerator
-from tradeaudit.app.services.backup_service import BackupService, BackupInfo
+from tradeaudit.app.services.backup_service import BackupService, BackupInfo, BackupProtectionResult
 from tradeaudit.app.services.quant_research_analyzer import QuantResearchAnalyzer
 
 __all__ = [

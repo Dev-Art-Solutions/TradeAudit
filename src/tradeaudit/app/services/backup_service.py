@@ -7,7 +7,7 @@ import os
 import shutil
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
@@ -25,6 +25,14 @@ class BackupInfo:
     size_bytes: int
     created_at: datetime
     tag: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class BackupProtectionResult:
+    """Outcome of enforcing the automatic safety-backup policy."""
+    path: Path
+    created: bool
+    pruned: int = 0
 
 
 class BackupService:
@@ -58,7 +66,9 @@ class BackupService:
             raise ValueError(f"Unsupported database URL for SQLite backup: {self.settings.database_url}")
 
         now = datetime.now()
-        timestamp_str = now.strftime("%Y%m%d_%H%M%S")
+        # Microseconds prevent two explicit backup operations in the same
+        # second from silently targeting the same file.
+        timestamp_str = now.strftime("%Y%m%d_%H%M%S%f")
         sanitized_tag = f"_{tag.strip().replace(' ', '_')}" if tag else ""
         backup_filename = f"tradeaudit_backup_{timestamp_str}{sanitized_tag}.db"
         dest_path = self.backup_dir / backup_filename
@@ -217,3 +227,30 @@ class BackupService:
                 logger.warning("Failed to delete old backup %s: %s", backup.filename, err)
 
         return deleted_count
+
+    def ensure_recent_backup(
+        self,
+        *,
+        tag: str = "pre_sync",
+        max_age_hours: int = 24,
+        keep_count: int = 10,
+    ) -> BackupProtectionResult:
+        """Create a safety snapshot only when no sufficiently recent backup exists.
+
+        This is designed for high-frequency operations such as history sync:
+        it provides a recovery point without producing an unbounded backup per
+        click. Retention is enforced immediately after creating a new snapshot.
+        """
+        if max_age_hours < 1:
+            raise ValueError("max_age_hours must be at least 1")
+        if keep_count < 1:
+            raise ValueError("keep_count must be at least 1")
+
+        backups = self.list_backups()
+        cutoff = datetime.now() - timedelta(hours=max_age_hours)
+        if backups and backups[0].created_at >= cutoff:
+            return BackupProtectionResult(path=backups[0].path, created=False)
+
+        path = self.create_backup(tag=tag)
+        pruned = self.clean_old_backups(keep_count=keep_count)
+        return BackupProtectionResult(path=path, created=True, pruned=pruned)

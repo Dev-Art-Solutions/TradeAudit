@@ -138,6 +138,44 @@ def test_sync_without_saved_settings_returns_400(client):
     assert res.status_code == 400
 
 
+def test_sync_establishes_safety_backup_before_mutating_history(client):
+    from tradeaudit.domain.models import SyncResult
+
+    client.post("/api/settings", json={"login": 777, "server": "Test-Server"})
+    ctx = client.app.state.tradeaudit_context
+    events = []
+    original_protection = ctx.backup_service.ensure_recent_backup
+
+    def protect(**kwargs):
+        events.append("backup")
+        return original_protection(**kwargs)
+
+    def synchronize(**kwargs):
+        events.append("sync")
+        return SyncResult(account_id=777, success=True, message="Done")
+
+    ctx.backup_service.ensure_recent_backup = protect
+    ctx.sync_service.sync_account_history = synchronize
+
+    res = client.post("/api/sync", json={})
+
+    assert res.status_code == 200
+    assert events == ["backup", "sync"]
+    assert "pre_sync" in res.json()["backup_protection"]["filename"]
+    assert ctx.backup_service.list_backups()
+
+
+def test_sync_is_canceled_when_safety_backup_fails(client):
+    client.post("/api/settings", json={"login": 777, "server": "Test-Server"})
+    ctx = client.app.state.tradeaudit_context
+    ctx.backup_service.ensure_recent_backup = lambda **kwargs: (_ for _ in ()).throw(OSError("disk full"))
+
+    res = client.post("/api/sync", json={})
+
+    assert res.status_code == 503
+    assert "synchronization was canceled" in res.json()["detail"]
+
+
 def test_connect_with_unreachable_account_returns_400(client):
     # Whether MetaTrader5 is installed in the test environment or not, a bogus
     # account/server must surface as a clean 400 with a message, never a crash.

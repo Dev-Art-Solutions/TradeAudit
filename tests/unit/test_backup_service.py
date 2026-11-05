@@ -3,7 +3,8 @@ Unit tests for BackupService (Phase 12).
 """
 
 import sqlite3
-import time
+import os
+from datetime import datetime, timedelta
 from pathlib import Path
 import pytest
 
@@ -35,9 +36,6 @@ def test_create_and_list_backups(temp_dir):
     assert b1_path.exists()
     assert b1_path.stat().st_size > 0
     assert "initial" in b1_path.name
-
-    # Small delay to ensure timestamp difference
-    time.sleep(1.05)
 
     # 2. Create second backup
     b2_path = service.create_backup(tag="secondary")
@@ -117,7 +115,6 @@ def test_clean_old_backups(temp_dir):
     # Create 5 dummy backup files
     for i in range(5):
         service.create_backup(tag=f"run_{i}")
-        time.sleep(1.05)
 
     assert len(service.list_backups()) == 5
 
@@ -125,3 +122,34 @@ def test_clean_old_backups(temp_dir):
     deleted = service.clean_old_backups(keep_count=2)
     assert deleted == 3
     assert len(service.list_backups()) == 2
+
+
+def test_recent_backup_is_reused_for_pre_sync_protection(temp_dir):
+    db_file = temp_dir / "tradeaudit.db"
+    sqlite3.connect(db_file).close()
+    service = BackupService(Settings(data_dir=temp_dir, database_url=f"sqlite:///{db_file}"))
+
+    first = service.ensure_recent_backup()
+    second = service.ensure_recent_backup()
+
+    assert first.created is True
+    assert second.created is False
+    assert second.path == first.path
+    assert len(service.list_backups()) == 1
+
+
+def test_stale_backup_is_replaced_and_retention_is_enforced(temp_dir):
+    db_file = temp_dir / "tradeaudit.db"
+    sqlite3.connect(db_file).close()
+    service = BackupService(Settings(data_dir=temp_dir, database_url=f"sqlite:///{db_file}"))
+    old = service.create_backup(tag="old")
+    stale = (datetime.now() - timedelta(days=2)).timestamp()
+    os.utime(old, (stale, stale))
+
+    result = service.ensure_recent_backup(max_age_hours=24, keep_count=1)
+
+    assert result.created is True
+    assert result.pruned == 1
+    assert result.path.exists()
+    assert old.exists() is False
+    assert len(service.list_backups()) == 1
