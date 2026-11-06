@@ -279,3 +279,20 @@ def test_trade_chart_journal_save(page, live_server, seeded_trade):
     page.select_option("#tj-rating", "B")
     page.click("#tj-save")
     page.wait_for_selector("text=Journal entry saved")
+
+
+def test_reports_view_generation_and_export_controls(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#reports")
+    page.wait_for_selector("#btn-gen-report", timeout=10000)
+    page.wait_for_selector("#sel-report-depth")
+
+    assert page.input_value("#sel-report-depth") == "Standard"
+    page.select_option("#sel-report-depth", "Summary")
+
+    page.click("#btn-gen-report")
+    page.wait_for_selector("#btn-copy-report:not([style*='none'])", timeout=10000)
+    page.wait_for_selector("#btn-download-report:not([style*='none'])", timeout=10000)
+
+    report_text = page.text_content("#report-box")
+    assert "TradeAudit" in report_text
+    assert "Executive Summary" in report_text

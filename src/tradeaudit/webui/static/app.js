@@ -1304,19 +1304,33 @@ async function pollLiveJournal() {
 
 async function viewReports() {
   content().innerHTML = `
-    <div class="toolbar"><div></div><div class="right">
-      <button class="btn" id="btn-copy-report" style="display:none">\u{1F4CB} Copy to Clipboard</button>
-      <button class="btn btn-primary" id="btn-gen-report">Generate Report</button>
-    </div></div>
+    <div class="toolbar">
+      <div style="display:flex;align-items:center;gap:10px">
+        <label for="sel-report-depth" style="margin:0;font-size:12px;color:var(--text-dim)">Report Depth:</label>
+        <select id="sel-report-depth" style="width:auto;padding:5px 10px;font-size:12px">
+          <option value="Summary">Summary</option>
+          <option value="Standard" selected>Standard</option>
+          <option value="Full">Full (with trade ledger)</option>
+        </select>
+      </div>
+      <div class="right">
+        <button class="btn" id="btn-copy-report" style="display:none">\u{1F4CB} Copy to Clipboard</button>
+        <button class="btn" id="btn-download-report" style="display:none">\u{1F4BE} Download Markdown (.md)</button>
+        <button class="btn btn-primary" id="btn-gen-report">Generate Report</button>
+      </div>
+    </div>
     <div class="card"><div class="markdown-box" id="report-box">Click "Generate Report" to build a Markdown / AI-ready audit dossier from your synced trades.</div></div>
   `;
   document.getElementById("btn-gen-report").addEventListener("click", async () => {
     document.getElementById("report-box").textContent = "Generating\u2026";
     document.getElementById("btn-copy-report").style.display = "none";
+    document.getElementById("btn-download-report").style.display = "none";
+    const depth = document.getElementById("sel-report-depth").value;
     try {
-      const res = await apiGet("/report");
+      const res = await apiGet(`/report?export_type=${encodeURIComponent(depth)}`);
       document.getElementById("report-box").textContent = res.markdown;
       document.getElementById("btn-copy-report").style.display = "inline-flex";
+      document.getElementById("btn-download-report").style.display = "inline-flex";
     } catch (e) {
       document.getElementById("report-box").textContent = "Error: " + e.message;
     }
@@ -1328,6 +1342,21 @@ async function viewReports() {
     } catch (e) {
       showTransientBanner("Could not copy automatically - select the text manually.", false);
     }
+  });
+  document.getElementById("btn-download-report").addEventListener("click", () => {
+    const text = document.getElementById("report-box").textContent;
+    if (!text) return;
+    const depth = (document.getElementById("sel-report-depth").value || "standard").toLowerCase();
+    const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `tradeaudit-report-${depth}-${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showTransientBanner("Markdown audit report downloaded.", true);
   });
 }
 

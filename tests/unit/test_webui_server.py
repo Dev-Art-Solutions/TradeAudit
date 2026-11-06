@@ -358,11 +358,32 @@ def test_report_endpoint_returns_markdown_with_evidence_and_data_quality(client,
     assert res.status_code == 200
     body = res.json()
     assert "markdown" in body
+    assert body["export_type"] == "Standard"
     markdown = body["markdown"]
     assert "dataset_sha256:" in markdown
     assert "data_quality_score:" in markdown
     assert "Audit Data Quality" in markdown
     assert "Evidence Fingerprint" in markdown
+
+
+def test_report_endpoint_supports_export_types(client, existing_trade_id):
+    summary_res = client.get("/api/report?export_type=Summary")
+    assert summary_res.status_code == 200
+    summary_body = summary_res.json()
+    assert summary_body["export_type"] == "Summary"
+    assert "export_type: Summary" in summary_body["markdown"]
+    assert "## 6. Multi-Dimensional Performance Breakdowns" not in summary_body["markdown"]
+
+    full_res = client.get("/api/report?export_type=Full")
+    assert full_res.status_code == 200
+    full_body = full_res.json()
+    assert full_body["export_type"] == "Full"
+    assert "export_type: Full" in full_body["markdown"]
+    assert "## 8. Complete Trade Ledger" in full_body["markdown"]
+
+    fallback_res = client.get("/api/report?export_type=invalid_type")
+    assert fallback_res.status_code == 200
+    assert fallback_res.json()["export_type"] == "Standard" 
 
 
 def test_manual_backup_and_backups_list(client):

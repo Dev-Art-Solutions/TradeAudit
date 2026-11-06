@@ -12,9 +12,10 @@
 - Versioned audit evidence snapshots with deterministic SHA-256 dataset fingerprints and no account identifiers.
 - Verifiable dataset fingerprint and audit data quality scoring embedded into generated Markdown reports.
 - One-click copy interaction and visual indicator for the audit evidence SHA-256 fingerprint on the dashboard.
-- Automatic pre-sync SQLite safety snapshots with 24-hour throttling, ten-backup retention, and fail-closed synchronization.
-- Backup inventory listing endpoint with live metadata and size tracking in settings.
+- Automatic pre-sync SQLite safety snapshots with 24-hour throttling, ten-backup retention, and fail-closed synchronization.
+- Backup inventory listing endpoint with live metadata and size tracking in settings.
 - Robust Path serialization support in API serialization utilities.
+- Configurable report depth selection (Summary, Standard, Full with trade ledger) and direct Markdown file download in the AI Reports tab.
 
 ## 1.1.1 — 2026-10-27
 

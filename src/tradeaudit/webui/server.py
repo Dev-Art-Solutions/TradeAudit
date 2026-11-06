@@ -23,7 +23,8 @@ from tradeaudit.app.exceptions import MT5Error, CredentialStoreError
 from tradeaudit.domain.models import MT5Settings, Strategy
 from tradeaudit.infrastructure.database.models import TradeModel
 from tradeaudit.domain.candles import TimeFrame
-from tradeaudit.domain.annotations import ChartAnnotation, AnnotationType, TradeJournalNote
+from tradeaudit.domain.annotations import ChartAnnotation, AnnotationType, TradeJournalNote
+from tradeaudit.domain.report import ExportType, ReportConfig
 from tradeaudit.app.services.performance_analyzer import PerformanceAnalyzer
 from tradeaudit.app.services.data_quality_analyzer import DataQualityAnalyzer
 from tradeaudit.app.services.diagnostics_service import DiagnosticsService
@@ -541,7 +542,7 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         return to_jsonable(quant_cache[cache_key])
 
     @app.get("/api/report")
-    def report():
+    def report(export_type: str = Query(default="Standard")):
         trades, _ = closed_trades()
         strategies = {s.id: s for s in ctx.strategy_service.get_all_strategies() if s.id is not None}
         account_info = None
@@ -550,8 +551,18 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
                 account_info = ctx.mt5_service.get_account_info()
             except Exception:
                 account_info = None
-        markdown = ctx.report_generator.generate(trades=trades, account_info=account_info, strategies=strategies)
-        return {"markdown": markdown}
+
+        normalized_export = export_type.strip().capitalize()
+        try:
+            exp_type = ExportType(normalized_export)
+        except ValueError:
+            exp_type = ExportType.STANDARD
+
+        config = ReportConfig(export_type=exp_type, app_version=ctx.settings.app_version)
+        markdown = ctx.report_generator.generate(
+            trades=trades, config=config, account_info=account_info, strategies=strategies
+        )
+        return {"markdown": markdown, "export_type": exp_type.value}
 
     # ------------------------------------------------------------ live journal
 
