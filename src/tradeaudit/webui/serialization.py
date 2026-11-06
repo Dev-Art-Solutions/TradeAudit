@@ -2,12 +2,15 @@
 import dataclasses
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 
 
 def to_jsonable(obj):
     """Recursively convert dataclasses/datetimes/enums/dicts/lists into plain JSON-safe values."""
     if obj is None or isinstance(obj, (str, int, float, bool)):
         return obj
+    if isinstance(obj, Path):
+        return str(obj)
     if isinstance(obj, Enum):
         return obj.value
     if isinstance(obj, datetime):

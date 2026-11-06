@@ -363,3 +363,29 @@ def test_report_endpoint_returns_markdown_with_evidence_and_data_quality(client,
     assert "data_quality_score:" in markdown
     assert "Audit Data Quality" in markdown
     assert "Evidence Fingerprint" in markdown
+
+
+def test_manual_backup_and_backups_list(client):
+    initial = client.get("/api/backups")
+    assert initial.status_code == 200
+    assert isinstance(initial.json(), list)
+
+    created = client.post("/api/backup")
+    assert created.status_code == 200
+    data = created.json()
+    assert "filename" in data
+    assert "path" in data
+
+    after = client.get("/api/backups")
+    assert after.status_code == 200
+    backups = after.json()
+    assert len(backups) >= 1
+    assert backups[0]["filename"] == data["filename"]
+    assert "size_bytes" in backups[0]
+    assert "created_at" in backups[0]
+
+
+def test_to_jsonable_path_serialization():
+    from tradeaudit.webui.serialization import to_jsonable
+    p = Path("some/arbitrary/path.sqlite")
+    assert to_jsonable(p) == str(p)

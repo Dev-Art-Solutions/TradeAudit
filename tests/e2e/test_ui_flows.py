@@ -86,6 +86,8 @@ def test_settings_exposes_runtime_diagnostics(page, live_server):
     page.wait_for_selector(".diagnostics-grid", timeout=10000)
     assert page.locator(".diagnostic-check").count() == 5
     assert page.is_enabled("#btn-export-diagnostics")
+    assert page.is_visible("#backup-status")
+    assert page.is_enabled("#btn-backup")
 
 
 def test_connect_without_mt5_shows_clean_error_not_a_crash(page, live_server):

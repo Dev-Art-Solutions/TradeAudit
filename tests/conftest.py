@@ -30,6 +30,7 @@ def test_settings(temp_dir):
         env="testing",
         debug=True,
         log_level="DEBUG",
+        data_dir=temp_dir,
         log_dir=temp_dir / "logs",
         log_file_name="test.log",
         database_url=f"sqlite:///{db_path}"

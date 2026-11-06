@@ -119,6 +119,12 @@ function fmtPct(v, digits = 1) {
   if (v === null || v === undefined) return "\u2014";
   return (Number(v) * 100).toFixed(digits) + "%";
 }
+function fmtBytes(bytes) {
+  if (bytes === null || bytes === undefined || Number.isNaN(bytes)) return "\u2014";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
 function fmtDate(iso) {
   if (!iso) return "\u2014";
   const d = new Date(iso);
@@ -853,9 +859,9 @@ function showTransientBanner(message, ok) {
 // ------------------------------------------------------------------ settings
 
 async function viewSettings() {
-  let s, diagnostics;
-  try { [s, diagnostics] = await Promise.all([apiGet("/state"), apiGet("/diagnostics")]); }
-  catch (e) { s = null; diagnostics = null; }
+  let s, diagnostics, backups;
+  try { [s, diagnostics, backups] = await Promise.all([apiGet("/state"), apiGet("/diagnostics"), apiGet("/backups")]); }
+  catch (e) { s = null; diagnostics = null; backups = []; }
   const settings = (s && s.settings) || { mt5_path: "", login: 0, server: "", timeout_ms: 60000 };
   const connected = s && s.connection_state === "CONNECTED";
 
@@ -909,6 +915,11 @@ async function viewSettings() {
         Data Directory: <span class="mono">${esc(s ? s.storage.data_dir : "")}</span><br/>
         Database: <span class="mono">${esc(s ? s.storage.database_url : "")}</span><br/>
         Protection policy: automatic pre-sync snapshot (at most once per 24h), retaining the latest 10 backups.
+      </div>
+      <div id="backup-status" class="kpi-sub" style="margin-bottom:14px">
+        ${backups && backups.length
+          ? `Latest backup: <strong>${esc(backups[0].filename)}</strong> (${fmtBytes(backups[0].size_bytes)}) · ${backups.length} snapshot(s) retained`
+          : `No database backups found yet. Create one manually below or run a sync.`}
       </div>
       <div class="btn-row" style="margin-top:0">
         <button class="btn" id="btn-backup">\u{1F4BE} Create Backup Now</button>
@@ -1002,7 +1013,14 @@ async function viewSettings() {
     try {
       const res = await apiPost("/backup", {});
       const retention = res.pruned ? ` · ${res.pruned} old backup(s) pruned` : "";
-      showTransientBanner("Backup created: " + res.path + retention, true);
+      showTransientBanner("Backup created: " + (res.filename || res.path) + retention, true);
+      try {
+        const updated = await apiGet("/backups");
+        if (updated && updated.length) {
+          const el = document.getElementById("backup-status");
+          if (el) el.innerHTML = `Latest backup: <strong>${esc(updated[0].filename)}</strong> (${fmtBytes(updated[0].size_bytes)}) · ${updated.length} snapshot(s) retained`;
+        }
+      } catch (_) {}
     } catch (e) { showTransientBanner(e.message, false); }
   });
 

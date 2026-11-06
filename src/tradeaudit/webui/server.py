@@ -329,6 +329,19 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         }
         return payload
 
+    @app.get("/api/backups")
+    def list_backups():
+        backups = ctx.backup_service.list_backups()
+        return [
+            {
+                "filename": b.filename,
+                "size_bytes": b.size_bytes,
+                "created_at": b.created_at.isoformat(),
+                "tag": b.tag,
+            }
+            for b in backups
+        ]
+
     @app.post("/api/backup")
     def backup():
         try:
