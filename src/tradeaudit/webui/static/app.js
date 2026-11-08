@@ -1302,56 +1302,265 @@ async function pollLiveJournal() {
 
 // ------------------------------------------------------------------ reports
 
+function renderMarkdownHtml(md) {
+  if (!md) return "";
+  const lines = md.split("\n");
+  const html = [];
+  let inCode = false;
+  let codeBuffer = [];
+  let inTable = false;
+  let tableRows = [];
+
+  function flushTable() {
+    if (!inTable || !tableRows.length) return;
+    let tableHtml = '<div class="table-wrap"><table class="report-table">';
+    let isHeader = true;
+    for (const row of tableRows) {
+      if (row.trim().match(/^\|(\s*:?-+:?\s*\|)+$/)) {
+        isHeader = false;
+        continue;
+      }
+      const cells = row.split("|").slice(1, -1);
+      const tag = isHeader ? "th" : "td";
+      tableHtml += "<tr>" + cells.map((c) => `<${tag}>${formatInline(c.trim())}</${tag}>`).join("") + "</tr>";
+    }
+    tableHtml += "</table></div>";
+    html.push(tableHtml);
+    inTable = false;
+    tableRows = [];
+  }
+
+  function formatInline(text) {
+    return esc(text)
+      .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+      .replace(/\*(.+?)\*/g, "<i>$1</i>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.trim().startsWith("```")) {
+      if (inTable) flushTable();
+      if (inCode) {
+        html.push(`<pre class="report-code-block"><code>${esc(codeBuffer.join("\n"))}</code></pre>`);
+        codeBuffer = [];
+        inCode = false;
+      } else {
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) {
+      codeBuffer.push(line);
+      continue;
+    }
+
+    if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
+      inTable = true;
+      tableRows.push(line);
+      continue;
+    } else if (inTable) {
+      flushTable();
+    }
+
+    if (line.startsWith("# ")) {
+      html.push(`<h1 class="report-h1">${formatInline(line.slice(2))}</h1>`);
+    } else if (line.startsWith("## ")) {
+      html.push(`<h2 class="report-h2">${formatInline(line.slice(3))}</h2>`);
+    } else if (line.startsWith("### ")) {
+      html.push(`<h3 class="report-h3">${formatInline(line.slice(4))}</h3>`);
+    } else if (line.trim() === "---") {
+      html.push('<hr class="report-divider" />');
+    } else if (line.startsWith("> ")) {
+      html.push(`<blockquote class="report-quote">${formatInline(line.slice(2))}</blockquote>`);
+    } else if (line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
+      html.push(`<li class="report-list-item">${formatInline(line.trim().slice(2))}</li>`);
+    } else if (line.trim().length > 0) {
+      html.push(`<p class="report-p">${formatInline(line)}</p>`);
+    }
+  }
+  if (inTable) flushTable();
+  if (inCode) {
+    html.push(`<pre class="report-code-block"><code>${esc(codeBuffer.join("\n"))}</code></pre>`);
+  }
+  return html.join("\n");
+}
+
+let currentReportData = {
+  markdown: "",
+  aiPrompt: "",
+  depth: "Standard",
+  period: "ALL_TIME",
+  symbol: "ALL",
+};
+
 async function viewReports() {
+  await loadTrades();
+  const symbols = [...new Set(state.trades.map((t) => t.symbol).filter(Boolean))].sort();
+  const symbolOptions = symbols.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+
   content().innerHTML = `
-    <div class="toolbar">
-      <div style="display:flex;align-items:center;gap:10px">
-        <label for="sel-report-depth" style="margin:0;font-size:12px;color:var(--text-dim)">Report Depth:</label>
-        <select id="sel-report-depth" style="width:auto;padding:5px 10px;font-size:12px">
-          <option value="Summary">Summary</option>
-          <option value="Standard" selected>Standard</option>
-          <option value="Full">Full (with trade ledger)</option>
-        </select>
-      </div>
-      <div class="right">
-        <button class="btn" id="btn-copy-report" style="display:none">\u{1F4CB} Copy to Clipboard</button>
-        <button class="btn" id="btn-download-report" style="display:none">\u{1F4BE} Download Markdown (.md)</button>
-        <button class="btn btn-primary" id="btn-gen-report">Generate Report</button>
+    <div class="card" style="margin-bottom:12px">
+      <div class="toolbar" style="flex-wrap:wrap;gap:12px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <label for="sel-report-depth" style="margin:0;font-size:12px;color:var(--text-dim)">Depth:</label>
+          <select id="sel-report-depth" style="width:auto;padding:5px 8px;font-size:12px">
+            <option value="Summary">Summary</option>
+            <option value="Standard" selected>Standard</option>
+            <option value="Full">Full (with ledger)</option>
+          </select>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:6px">
+          <label for="sel-report-period" style="margin:0;font-size:12px;color:var(--text-dim)">Period:</label>
+          <select id="sel-report-period" style="width:auto;padding:5px 8px;font-size:12px">
+            <option value="ALL_TIME" selected>All Time</option>
+            <option value="TODAY">Today</option>
+            <option value="THIS_WEEK">This Week</option>
+            <option value="LAST_WEEK">Last Week</option>
+            <option value="THIS_MONTH">This Month</option>
+            <option value="LAST_MONTH">Last Month</option>
+          </select>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:6px">
+          <label for="sel-report-symbol" style="margin:0;font-size:12px;color:var(--text-dim)">Symbol:</label>
+          <select id="sel-report-symbol" style="width:auto;padding:5px 8px;font-size:12px">
+            <option value="ALL" selected>All Symbols</option>
+            ${symbolOptions}
+          </select>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="margin:0;font-size:12px;color:var(--text-dim);cursor:pointer;display:inline-flex;align-items:center;gap:4px">
+            <input type="checkbox" id="chk-report-anonymize" checked /> Anonymize
+          </label>
+        </div>
+
+        <div class="right">
+          <button class="btn btn-primary" id="btn-gen-report">Generate Report</button>
+        </div>
       </div>
     </div>
-    <div class="card"><div class="markdown-box" id="report-box">Click "Generate Report" to build a Markdown / AI-ready audit dossier from your synced trades.</div></div>
+
+    <div class="toolbar" style="margin-bottom:8px">
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-sm" id="btn-view-formatted" style="font-weight:600">👁️ Formatted View</button>
+        <button class="btn btn-sm btn-subtle" id="btn-view-raw">📄 Raw Markdown</button>
+      </div>
+      <div class="right" style="gap:8px">
+        <button class="btn btn-sm" id="btn-copy-prompt" style="display:none">🤖 Copy AI Prompt</button>
+        <button class="btn btn-sm" id="btn-copy-report" style="display:none">📋 Copy Report</button>
+        <button class="btn btn-sm" id="btn-download-report" style="display:none">💾 Download .md</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="report-rendered" class="report-rendered-view">Click "Generate Report" to build an AI-ready audit dossier from your synced trades.</div>
+      <div class="markdown-box" id="report-box" style="display:none">Click "Generate Report" to build a Markdown / AI-ready audit dossier from your synced trades.</div>
+    </div>
   `;
+
+  let viewMode = "formatted";
+
+  function setViewMode(mode) {
+    viewMode = mode;
+    const btnFormatted = document.getElementById("btn-view-formatted");
+    const btnRaw = document.getElementById("btn-view-raw");
+    const elRendered = document.getElementById("report-rendered");
+    const elRaw = document.getElementById("report-box");
+
+    if (mode === "formatted") {
+      btnFormatted.classList.remove("btn-subtle");
+      btnFormatted.style.fontWeight = "600";
+      btnRaw.classList.add("btn-subtle");
+      btnRaw.style.fontWeight = "normal";
+      elRendered.style.display = "block";
+      elRaw.style.display = "none";
+    } else {
+      btnRaw.classList.remove("btn-subtle");
+      btnRaw.style.fontWeight = "600";
+      btnFormatted.classList.add("btn-subtle");
+      btnFormatted.style.fontWeight = "normal";
+      elRendered.style.display = "none";
+      elRaw.style.display = "block";
+    }
+  }
+
+  document.getElementById("btn-view-formatted").addEventListener("click", () => setViewMode("formatted"));
+  document.getElementById("btn-view-raw").addEventListener("click", () => setViewMode("raw"));
+
   document.getElementById("btn-gen-report").addEventListener("click", async () => {
-    document.getElementById("report-box").textContent = "Generating\u2026";
+    document.getElementById("report-rendered").innerHTML = "<i>Generating audit dossier…</i>";
+    document.getElementById("report-box").textContent = "Generating…";
+    document.getElementById("btn-copy-prompt").style.display = "none";
     document.getElementById("btn-copy-report").style.display = "none";
     document.getElementById("btn-download-report").style.display = "none";
+
     const depth = document.getElementById("sel-report-depth").value;
+    const period = document.getElementById("sel-report-period").value;
+    const symbol = document.getElementById("sel-report-symbol").value;
+    const anonymize = document.getElementById("chk-report-anonymize").checked;
+
+    currentReportData.depth = depth;
+    currentReportData.period = period;
+    currentReportData.symbol = symbol;
+
     try {
-      const res = await apiGet(`/report?export_type=${encodeURIComponent(depth)}`);
+      const qs = new URLSearchParams({
+        export_type: depth,
+        period: period,
+        symbol: symbol,
+        mask_account: anonymize ? "true" : "false",
+        hide_broker: anonymize ? "true" : "false",
+        mask_tickets: anonymize ? "true" : "false",
+      });
+      const res = await apiGet(`/report?${qs.toString()}`);
+      currentReportData.markdown = res.markdown;
+      currentReportData.aiPrompt = res.ai_prompt || "";
+
       document.getElementById("report-box").textContent = res.markdown;
+      document.getElementById("report-rendered").innerHTML = renderMarkdownHtml(res.markdown);
+
+      document.getElementById("btn-copy-prompt").style.display = "inline-flex";
       document.getElementById("btn-copy-report").style.display = "inline-flex";
       document.getElementById("btn-download-report").style.display = "inline-flex";
     } catch (e) {
+      document.getElementById("report-rendered").innerHTML = `<span class="loss">Error: ${esc(e.message)}</span>`;
       document.getElementById("report-box").textContent = "Error: " + e.message;
     }
   });
+
+  document.getElementById("btn-copy-prompt").addEventListener("click", async () => {
+    if (!currentReportData.aiPrompt) return;
+    try {
+      await navigator.clipboard.writeText(currentReportData.aiPrompt);
+      showTransientBanner("🤖 AI System Prompt copied! Paste into ChatGPT or Claude.", true);
+    } catch (e) {
+      showTransientBanner("Could not copy AI Prompt automatically.", false);
+    }
+  });
+
   document.getElementById("btn-copy-report").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(document.getElementById("report-box").textContent);
-      showTransientBanner("\u{1F4CB} Copied to clipboard! Ready to paste into ChatGPT.", true);
+      showTransientBanner("📋 Full audit report copied to clipboard!", true);
     } catch (e) {
       showTransientBanner("Could not copy automatically - select the text manually.", false);
     }
   });
+
   document.getElementById("btn-download-report").addEventListener("click", () => {
     const text = document.getElementById("report-box").textContent;
     if (!text) return;
-    const depth = (document.getElementById("sel-report-depth").value || "standard").toLowerCase();
+    const depth = (currentReportData.depth || "standard").toLowerCase();
+    const sym = (currentReportData.symbol || "all").toLowerCase();
     const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `tradeaudit-report-${depth}-${new Date().toISOString().slice(0, 10)}.md`;
+    link.download = `tradeaudit-report-${depth}-${sym}-${new Date().toISOString().slice(0, 10)}.md`;
     document.body.appendChild(link);
     link.click();
     link.remove();

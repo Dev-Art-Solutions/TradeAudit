@@ -122,6 +122,19 @@ class MarkdownReportGenerator:
 
         return "\n\n".join(sections).strip() + "\n"
 
+    def build_ai_prompt(
+        self,
+        trades: List[Trade],
+        config: Optional[ReportConfig] = None
+    ) -> str:
+        """Generate targeted AI audit questions and recommended system prompt."""
+        cfg = config or ReportConfig()
+        filtered = FilterEvaluator.apply(trades, cfg.filters)
+        closed = [t for t in filtered if t.status and t.status.upper() == "CLOSED"]
+        metrics = PerformanceAnalyzer.analyze(closed)
+        comparison = StrategyTraderComparator.compare(closed)
+        return self._build_ai_questions_and_prompt(metrics, comparison, cfg)
+
     def _mask_account(self, login: int, privacy: PrivacyOptions) -> str:
         if not login:
             return "N/A"

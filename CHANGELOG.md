@@ -19,6 +19,9 @@
 - Trade chart screenshot serving endpoint (`GET /api/screenshots/{filename}`) with token query validation, strict path traversal safeguards, and PNG verification.
 - Trade journal screenshot detachment workflow and secure deletion endpoint (`DELETE /api/trades/{trade_id}/screenshots/{filename}`).
 - Interactive screenshot gallery, thumbnail cards, and full-resolution lightbox modal preview in the Trade Chart journal.
+- Interactive HTML rendering and view mode toggle (Formatted View vs. Raw Markdown) for AI audit reports.
+- One-click "Copy AI Prompt" button extracting tailored system prompts and targeted questions for ChatGPT and Claude.
+- Scoped report filtering by trading period, symbol, and configurable privacy/anonymization toggles in the AI Reports tab.
 
 ## 1.1.1 — 2026-10-27
 

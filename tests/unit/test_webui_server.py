@@ -434,7 +434,19 @@ def test_report_endpoint_supports_export_types(client, existing_trade_id):
 
     fallback_res = client.get("/api/report?export_type=invalid_type")
     assert fallback_res.status_code == 200
-    assert fallback_res.json()["export_type"] == "Standard" 
+    assert fallback_res.json()["export_type"] == "Standard"
+
+
+def test_report_endpoint_supports_filters_privacy_and_ai_prompt(client, existing_trade_id):
+    res = client.get("/api/report?symbol=EURUSD&period=ALL_TIME&mask_account=false&hide_broker=false")
+    assert res.status_code == 200
+    data = res.json()
+    assert "ai_prompt" in data
+    assert "## 10. Targeted AI Audit Questions" in data["ai_prompt"]
+    assert "You are an elite quantitative trading coach" in data["ai_prompt"]
+    assert data["filters"]["symbol"] == "EURUSD"
+    assert data["privacy"]["mask_account"] is False
+    assert "symbols: 'EURUSD'" in data["markdown"]
 
 
 def test_manual_backup_and_backups_list(client):

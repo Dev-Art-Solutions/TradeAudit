@@ -23,8 +23,10 @@ from tradeaudit.app.exceptions import MT5Error, CredentialStoreError
 from tradeaudit.domain.models import MT5Settings, Strategy
 from tradeaudit.infrastructure.database.models import TradeModel
 from tradeaudit.domain.candles import TimeFrame
-from tradeaudit.domain.annotations import ChartAnnotation, AnnotationType, TradeJournalNote
-from tradeaudit.domain.report import ExportType, ReportConfig
+from tradeaudit.domain.annotations import ChartAnnotation, AnnotationType, TradeJournalNote
+
+from tradeaudit.domain.filters import AnalysisFilter, PeriodPreset
+from tradeaudit.domain.report import ExportType, PrivacyOptions, ReportConfig
 from tradeaudit.app.services.performance_analyzer import PerformanceAnalyzer
 from tradeaudit.app.services.data_quality_analyzer import DataQualityAnalyzer
 from tradeaudit.app.services.diagnostics_service import DiagnosticsService
@@ -542,7 +544,16 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         return to_jsonable(quant_cache[cache_key])
 
     @app.get("/api/report")
-    def report(export_type: str = Query(default="Standard")):
+    def report(
+        export_type: str = Query(default="Standard"),
+        period: str = Query(default="ALL_TIME"),
+        symbol: Optional[str] = Query(default=None),
+        strategy_id: Optional[int] = Query(default=None),
+        compliance: Optional[str] = Query(default=None),
+        mask_account: bool = Query(default=True),
+        hide_broker: bool = Query(default=True),
+        mask_tickets: bool = Query(default=True),
+    ):
         trades, _ = closed_trades()
         strategies = {s.id: s for s in ctx.strategy_service.get_all_strategies() if s.id is not None}
         account_info = None
@@ -558,11 +569,54 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         except ValueError:
             exp_type = ExportType.STANDARD
 
-        config = ReportConfig(export_type=exp_type, app_version=ctx.settings.app_version)
+        try:
+            period_preset = PeriodPreset(period.strip().upper())
+        except ValueError:
+            period_preset = PeriodPreset.ALL_TIME
+
+        symbols_list = [symbol.strip().upper()] if symbol and symbol.strip().upper() != "ALL" else []
+
+        comp_status = None
+        if compliance and compliance.strip().upper() != "ALL":
+            comp_status = compliance.strip().upper()
+
+        filters = AnalysisFilter(
+            period=period_preset,
+            symbols=symbols_list,
+            strategy_id=strategy_id,
+            compliance_status=comp_status,
+        )
+        privacy = PrivacyOptions(
+            mask_account_number=mask_account,
+            hide_broker=hide_broker,
+            mask_tickets=mask_tickets,
+        )
+        config = ReportConfig(
+            export_type=exp_type,
+            filters=filters,
+            privacy=privacy,
+            app_version=ctx.settings.app_version,
+        )
         markdown = ctx.report_generator.generate(
             trades=trades, config=config, account_info=account_info, strategies=strategies
         )
-        return {"markdown": markdown, "export_type": exp_type.value}
+        ai_prompt = ctx.report_generator.build_ai_prompt(trades=trades, config=config)
+        return {
+            "markdown": markdown,
+            "export_type": exp_type.value,
+            "ai_prompt": ai_prompt,
+            "filters": {
+                "period": period_preset.value,
+                "symbol": symbol or "ALL",
+                "strategy_id": strategy_id,
+                "compliance": comp_status or "ALL",
+            },
+            "privacy": {
+                "mask_account": mask_account,
+                "hide_broker": hide_broker,
+                "mask_tickets": mask_tickets,
+            },
+        }
 
     # ------------------------------------------------------------ live journal
 

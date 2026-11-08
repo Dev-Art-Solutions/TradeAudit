@@ -306,3 +306,13 @@ def test_report_empty_trades():
     assert "---" in report
     assert "0 Closed Trades" in report
     assert "INSUFFICIENT SAMPLE SIZE" in report
+
+
+def test_build_ai_prompt_returns_targeted_questions_and_system_prompt(sample_trades):
+    generator = MarkdownReportGenerator(app_version="0.1.0")
+    ai_prompt = generator.build_ai_prompt(sample_trades)
+
+    assert "## 10. Targeted AI Audit Questions" in ai_prompt
+    assert "## 🤖 Suggested System Prompt for AI Analysis" in ai_prompt
+    assert "You are an elite quantitative trading coach" in ai_prompt
+    assert "Core Edge Diagnosis" in ai_prompt

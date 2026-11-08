@@ -319,9 +319,18 @@ def test_reports_view_generation_and_export_controls(page, live_server, seeded_t
     page.select_option("#sel-report-depth", "Summary")
 
     page.click("#btn-gen-report")
+    page.wait_for_selector("#btn-copy-prompt:not([style*='none'])", timeout=10000)
     page.wait_for_selector("#btn-copy-report:not([style*='none'])", timeout=10000)
     page.wait_for_selector("#btn-download-report:not([style*='none'])", timeout=10000)
 
     report_text = page.text_content("#report-box")
     assert "TradeAudit" in report_text
     assert "Executive Summary" in report_text
+
+    # Formatted view should be visible with rendered headers
+    page.wait_for_selector("#report-rendered .report-h1", timeout=5000)
+    assert page.is_visible("#report-rendered")
+
+    # Toggle to raw markdown view
+    page.click("#btn-view-raw")
+    page.wait_for_selector("#report-box:not([style*='none'])", timeout=5000)
