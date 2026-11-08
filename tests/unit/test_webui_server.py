@@ -321,6 +321,57 @@ def test_screenshot_upload_rejects_non_png_content(client, existing_trade_id):
     assert res.status_code == 400
 
 
+def test_screenshot_endpoints_serve_and_delete_with_security(client, existing_trade_id):
+    tiny_png_base64 = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    # 1. Upload screenshot
+    res = client.post(
+        f"/api/trades/{existing_trade_id}/screenshot",
+        json={"image_base64": "data:image/png;base64," + tiny_png_base64},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    filename = body["filename"]
+    out_path = Path(body["path"])
+    assert out_path.exists()
+
+    # 2. Fetch screenshot via header token
+    get_res = client.get(f"/api/screenshots/{filename}")
+    assert get_res.status_code == 200
+    assert get_res.headers["content-type"] == "image/png"
+    assert get_res.content == base64.b64decode(tiny_png_base64)
+
+    # 3. Fetch screenshot via query param token without header
+    token = client.headers.get("X-TradeAudit-Token")
+    client_no_header = client.app
+    from starlette.testclient import TestClient
+    unauth_client = TestClient(client_no_header)
+    query_res = unauth_client.get(f"/api/screenshots/{filename}?token={token}")
+    assert query_res.status_code == 200
+    assert query_res.headers["content-type"] == "image/png"
+
+    # 4. Reject directory traversal attempts
+    traversal_res1 = client.get("/api/screenshots/../secret.png")
+    assert traversal_res1.status_code in (400, 404)
+    traversal_res2 = client.get("/api/screenshots/sub/image.png")
+    assert traversal_res2.status_code in (400, 404)
+
+    # 5. Delete screenshot
+    del_res = client.delete(f"/api/trades/{existing_trade_id}/screenshots/{filename}")
+    assert del_res.status_code == 200
+    assert del_res.json()["ok"] is True
+    assert not out_path.exists()
+
+    # Note should no longer contain this screenshot
+    note_res = client.get(f"/api/trades/{existing_trade_id}/journal").json()
+    assert filename not in [Path(p).name for p in note_res["screenshot_paths"]]
+
+    # 6. Delete invalid filename rejects
+    del_bad = client.delete(f"/api/trades/{existing_trade_id}/screenshots/..bad.png")
+    assert del_bad.status_code == 400
+
+
 def test_live_journal_without_account(client):
     res = client.get("/api/live-journal/positions").json()
     assert res["status"] == "Configure MT5 settings first"

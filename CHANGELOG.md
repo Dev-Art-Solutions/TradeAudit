@@ -16,6 +16,9 @@
 - Backup inventory listing endpoint with live metadata and size tracking in settings.
 - Robust Path serialization support in API serialization utilities.
 - Configurable report depth selection (Summary, Standard, Full with trade ledger) and direct Markdown file download in the AI Reports tab.
+- Trade chart screenshot serving endpoint (`GET /api/screenshots/{filename}`) with token query validation, strict path traversal safeguards, and PNG verification.
+- Trade journal screenshot detachment workflow and secure deletion endpoint (`DELETE /api/trades/{trade_id}/screenshots/{filename}`).
+- Interactive screenshot gallery, thumbnail cards, and full-resolution lightbox modal preview in the Trade Chart journal.
 
 ## 1.1.1 — 2026-10-27
 

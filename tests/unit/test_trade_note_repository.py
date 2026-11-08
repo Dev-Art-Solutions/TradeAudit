@@ -106,3 +106,10 @@ def test_trade_journal_service_workflows(db_session_factory):
     # 3. Check persistence
     fetched = service.get_or_create_note(503)
     assert "/path/to/chart.png" in fetched.screenshot_paths
+
+    # 4. Detach screenshot by basename or exact path
+    detached = service.detach_screenshot_from_trade(503, "chart.png")
+    assert "/path/to/chart.png" not in detached.screenshot_paths
+
+    fetched_again = service.get_or_create_note(503)
+    assert "/path/to/chart.png" not in fetched_again.screenshot_paths

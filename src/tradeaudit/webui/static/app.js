@@ -1615,7 +1615,13 @@ async function viewTradeChart() {
       <div class="field"><label>Pre-Trade Thesis</label><textarea id="tj-pre" rows="2"></textarea></div>
       <div class="field"><label>Post-Trade Review</label><textarea id="tj-post" rows="2"></textarea></div>
       <div class="field"><label>Lessons Learned</label><textarea id="tj-lessons" rows="2"></textarea></div>
-      <div class="kpi-sub" id="tj-screenshots" style="margin-bottom:10px"></div>
+      <div class="field">
+        <label>Screenshots & Chart Snapshots</label>
+        <div id="tj-screenshots-wrap">
+          <div class="kpi-sub" id="tj-screenshots" style="margin-bottom:8px">No screenshots saved yet.</div>
+          <div class="screenshot-gallery" id="tj-screenshot-gallery"></div>
+        </div>
+      </div>
       <div class="btn-row" style="margin-top:0"><button class="btn btn-primary" id="tj-save">Save Journal Entry</button></div>
     </div>
   `;
@@ -1724,8 +1730,7 @@ async function loadTradeChart() {
   document.getElementById("tj-pre").value = note ? note.pre_trade_thesis : "";
   document.getElementById("tj-post").value = note ? note.post_trade_review : "";
   document.getElementById("tj-lessons").value = note ? note.lessons_learned : "";
-  document.getElementById("tj-screenshots").textContent = note && note.screenshot_paths.length
-    ? `${note.screenshot_paths.length} screenshot(s) saved to disk.` : "No screenshots saved yet.";
+  renderScreenshotGallery(note ? note.screenshot_paths : []);
 
   const currTrade = state.trades.find((x) => String(x.id) === String(tradeId));
   if (currTrade) {
@@ -2062,13 +2067,120 @@ async function clearAnnotations() {
   } catch (e) { showTransientBanner(e.message, false); }
 }
 
+function getScreenshotFilename(pathStr) {
+  if (!pathStr) return "";
+  const normalized = pathStr.replace(/\\/g, "/");
+  return normalized.split("/").pop() || "";
+}
+
+function getScreenshotUrl(filename) {
+  const token = window.__TA_TOKEN__ || "";
+  return `/api/screenshots/${encodeURIComponent(filename)}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+}
+
+function renderScreenshotGallery(screenshotPaths) {
+  const galleryEl = document.getElementById("tj-screenshot-gallery");
+  const countEl = document.getElementById("tj-screenshots");
+  if (!galleryEl || !countEl) return;
+
+  const validPaths = (screenshotPaths || []).filter(Boolean);
+  if (!validPaths.length) {
+    countEl.textContent = "No screenshots captured yet. Click '📸 Screenshot' above to capture a chart snapshot.";
+    galleryEl.innerHTML = "";
+    return;
+  }
+
+  countEl.textContent = `${validPaths.length} screenshot(s) saved for this trade:`;
+  galleryEl.innerHTML = validPaths.map((p) => {
+    const fn = getScreenshotFilename(p);
+    const url = getScreenshotUrl(fn);
+    return `
+      <div class="screenshot-card" data-filename="${esc(fn)}">
+        <div class="screenshot-thumb-wrap" onclick="openScreenshotLightbox('${esc(url)}', '${esc(fn)}')">
+          <img class="screenshot-thumb" src="${esc(url)}" alt="Chart Screenshot" loading="lazy" />
+          <div class="screenshot-overlay"><span class="screenshot-zoom-icon">🔍 View Full Size</span></div>
+        </div>
+        <div class="screenshot-meta">
+          <span class="screenshot-name" title="${esc(fn)}">${esc(fn)}</span>
+          <div class="screenshot-btns">
+            <button type="button" class="btn-subtle" onclick="openScreenshotLightbox('${esc(url)}', '${esc(fn)}')" title="Preview full size">🔍</button>
+            <a href="${esc(url)}" download="${esc(fn)}" class="btn-subtle" title="Download image" target="_blank" rel="noopener">📥</a>
+            <button type="button" class="btn-danger-subtle" onclick="deleteScreenshot('${esc(fn)}')" title="Delete screenshot">🗑️</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function openScreenshotLightbox(url, fn) {
+  let modal = document.getElementById("screenshot-lightbox");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "screenshot-lightbox";
+    modal.className = "screenshot-lightbox";
+    modal.innerHTML = `
+      <div class="screenshot-lightbox-backdrop"></div>
+      <div class="screenshot-lightbox-content">
+        <div class="screenshot-lightbox-header">
+          <span id="sl-title" class="screenshot-lightbox-title"></span>
+          <div class="screenshot-lightbox-actions">
+            <a id="sl-download" href="#" download class="btn btn-sm" target="_blank" rel="noopener">📥 Download</a>
+            <button type="button" class="btn btn-sm" id="sl-close">✕ Close</button>
+          </div>
+        </div>
+        <div class="screenshot-lightbox-body">
+          <img id="sl-img" src="" alt="Screenshot Full View" />
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.querySelector(".screenshot-lightbox-backdrop").addEventListener("click", closeScreenshotLightbox);
+    modal.querySelector("#sl-close").addEventListener("click", closeScreenshotLightbox);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && modal.classList.contains("active")) {
+        closeScreenshotLightbox();
+      }
+    });
+  }
+
+  document.getElementById("sl-title").textContent = fn;
+  const imgEl = document.getElementById("sl-img");
+  imgEl.src = url;
+  const dlEl = document.getElementById("sl-download");
+  dlEl.href = url;
+  dlEl.download = fn;
+  modal.classList.add("active");
+}
+
+function closeScreenshotLightbox() {
+  const modal = document.getElementById("screenshot-lightbox");
+  if (modal) {
+    modal.classList.remove("active");
+    const imgEl = document.getElementById("sl-img");
+    if (imgEl) imgEl.src = "";
+  }
+}
+
+async function deleteScreenshot(fn) {
+  if (!confirm(`Delete screenshot "${fn}"?`)) return;
+  try {
+    const res = await api(`/trades/${TC.tradeId}/screenshots/${encodeURIComponent(fn)}`, { method: "DELETE" });
+    renderScreenshotGallery(res.note ? res.note.screenshot_paths : []);
+    showTransientBanner("Screenshot deleted.", true);
+  } catch (e) {
+    showTransientBanner("Could not delete screenshot: " + e.message, false);
+  }
+}
+
 async function takeScreenshot() {
   const canvas = document.getElementById("tc-canvas");
   try {
     const dataUrl = canvas.toDataURL("image/png");
     const res = await apiPost(`/trades/${TC.tradeId}/screenshot`, { image_base64: dataUrl });
-    document.getElementById("tj-screenshots").textContent = `${res.note.screenshot_paths.length} screenshot(s) saved to disk.`;
-    showTransientBanner("Screenshot saved to " + res.path, true);
+    renderScreenshotGallery(res.note ? res.note.screenshot_paths : []);
+    showTransientBanner("Screenshot saved and added to gallery!", true);
   } catch (e) { showTransientBanner(e.message, false); }
 }
 

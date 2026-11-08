@@ -67,6 +67,16 @@ class TradeJournalService:
             note = self.save_note(note)
         return note
 
+    def detach_screenshot_from_trade(self, trade_id: int, screenshot_identifier: str) -> TradeJournalNote:
+        """Remove a saved screenshot reference from the trade note."""
+        note = self.get_or_create_note(trade_id)
+        target = screenshot_identifier.replace("\\", "/").split("/")[-1]
+        note.screenshot_paths = [
+            p for p in note.screenshot_paths
+            if p != screenshot_identifier and p.replace("\\", "/").split("/")[-1] != target
+        ]
+        return self.save_note(note)
+
     def get_annotations(self, trade_id: int, timeframe: Optional[str] = None) -> List[ChartAnnotation]:
         """Fetch chart annotations for a trade."""
         if self.annotation_repo:

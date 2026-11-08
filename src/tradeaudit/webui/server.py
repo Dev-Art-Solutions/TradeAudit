@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -157,7 +157,7 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
                 return secure(Response(status_code=400, content="Invalid Content-Length header."))
 
         if request.url.path.startswith("/api/"):
-            supplied_token = request.headers.get("X-TradeAudit-Token", "")
+            supplied_token = request.headers.get("X-TradeAudit-Token", "") or request.query_params.get("token", "")
             if not secrets.compare_digest(supplied_token, app.state.api_token):
                 return secure(Response(status_code=401, content="Missing or invalid API token."))
             origin = request.headers.get("origin")
@@ -680,7 +680,31 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         out_path.write_bytes(image_bytes)
 
         note = ctx.journal_service.attach_screenshot_to_trade(trade_id, str(out_path))
-        return {"path": str(out_path), "note": to_jsonable(note)}
+        return {"path": str(out_path), "filename": filename, "note": to_jsonable(note)}
+
+    @app.get("/api/screenshots/{filename}")
+    def get_screenshot(filename: str):
+        if not filename or "/" in filename or "\\" in filename or ".." in filename or "\0" in filename:
+            raise HTTPException(status_code=400, detail="Invalid screenshot filename.")
+        if not filename.lower().endswith(".png"):
+            raise HTTPException(status_code=400, detail="Only PNG screenshots are supported.")
+        file_path = (ctx.settings.screenshots_dir / filename).resolve()
+        if not file_path.is_file() or file_path.parent.resolve() != ctx.settings.screenshots_dir.resolve():
+            raise HTTPException(status_code=404, detail="Screenshot not found.")
+        return FileResponse(file_path, media_type="image/png")
+
+    @app.delete("/api/trades/{trade_id}/screenshots/{filename}")
+    def delete_screenshot(trade_id: int, filename: str):
+        if not filename or "/" in filename or "\\" in filename or ".." in filename or "\0" in filename:
+            raise HTTPException(status_code=400, detail="Invalid screenshot filename.")
+        note = ctx.journal_service.detach_screenshot_from_trade(trade_id, filename)
+        file_path = (ctx.settings.screenshots_dir / filename).resolve()
+        if file_path.is_file() and file_path.parent.resolve() == ctx.settings.screenshots_dir.resolve():
+            try:
+                file_path.unlink()
+            except OSError as e:
+                logger.warning("Could not delete screenshot file %s: %s", file_path, e)
+        return {"ok": True, "note": to_jsonable(note)}
 
     # ------------------------------------------------------------------ SPA
 

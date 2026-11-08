@@ -281,6 +281,35 @@ def test_trade_chart_journal_save(page, live_server, seeded_trade):
     page.wait_for_selector("text=Journal entry saved")
 
 
+def test_trade_chart_screenshot_capture_and_gallery(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#trade-chart")
+    page.wait_for_selector("#tc-screenshot", timeout=10000)
+    page.wait_for_selector("#tj-screenshot-gallery", state="attached")
+
+    # Initial state
+    assert "No screenshots captured yet" in page.text_content("#tj-screenshots")
+
+    # Capture screenshot
+    page.click("#tc-screenshot")
+    page.wait_for_selector(".screenshot-card", timeout=10000)
+    assert page.is_visible(".screenshot-thumb")
+
+    # Open lightbox preview
+    page.click(".screenshot-thumb-wrap")
+    page.wait_for_selector("#screenshot-lightbox.active", timeout=5000)
+    assert page.is_visible("#sl-img")
+
+    # Close lightbox
+    page.click("#sl-close")
+    page.wait_for_selector("#screenshot-lightbox", state="hidden", timeout=5000)
+
+    # Delete screenshot from gallery
+    page.on("dialog", lambda dialog: dialog.accept())
+    page.click(".btn-danger-subtle")
+    page.wait_for_selector(".screenshot-card", state="detached", timeout=5000)
+    assert "No screenshots captured yet" in page.text_content("#tj-screenshots")
+
+
 def test_reports_view_generation_and_export_controls(page, live_server, seeded_trade):
     page.goto(live_server["base_url"] + "/#reports")
     page.wait_for_selector("#btn-gen-report", timeout=10000)
