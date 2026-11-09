@@ -982,3 +982,32 @@ canvas.chart-canvas { width: 100%; height: 220px; display: block; }
   margin: 3px 0 3px 18px;
   font-size: 13px;
 }
+
+/* ---------- quant & monte carlo visualizations ---------- */
+
+.mc-cone-canvas {
+  background: #090d13;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  margin-top: 10px;
+}
+.mc-legend {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+.mc-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mc-legend-dot {
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}

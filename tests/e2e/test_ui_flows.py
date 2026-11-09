@@ -128,6 +128,7 @@ def seeded_trade(live_server):
         open_time=datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc),
         close_time=datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc),
         open_price=1.1000, close_price=1.1050, status="CLOSED", profit=50.0,
+        initial_sl=1.0967, monetary_risk=33.3, realized_r=1.5,
     )
     saved = live_server["ctx"].trade_repo.save_trades(777, [trade])
     live_server["ctx"].settings_repo.save_mt5_settings(
@@ -334,3 +335,12 @@ def test_reports_view_generation_and_export_controls(page, live_server, seeded_t
     # Toggle to raw markdown view
     page.click("#btn-view-raw")
     page.wait_for_selector("#report-box:not([style*='none'])", timeout=5000)
+
+
+def test_quant_view_monte_carlo_cone_and_confidence_intervals(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#quant")
+    page.wait_for_selector("#mc-cone-canvas", timeout=15000)
+    assert page.is_visible("#mc-cone-canvas")
+    assert page.is_visible("text=Monte Carlo Equity Simulation Envelope")
+    assert page.is_visible("text=Bootstrap 95% Confidence Intervals")
+    assert page.is_visible(".mc-legend")

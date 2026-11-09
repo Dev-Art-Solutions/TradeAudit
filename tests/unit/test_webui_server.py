@@ -473,3 +473,33 @@ def test_to_jsonable_path_serialization():
     from tradeaudit.webui.serialization import to_jsonable
     p = Path("some/arbitrary/path.sqlite")
     assert to_jsonable(p) == str(p)
+
+def test_quant_endpoint_returns_monte_carlo_and_confidence_intervals(client, existing_trade_id):
+    from tradeaudit.infrastructure.database.models import TradeModel
+    ctx = client.app.state.tradeaudit_context
+    with ctx.db_manager.session_scope() as session:
+        trade = session.query(TradeModel).filter(TradeModel.id == existing_trade_id).first()
+        trade.realized_r = 1.8
+        trade.profit = 180.0
+        session.commit()
+
+    res = client.get("/api/quant")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert "monte_carlo" in data
+    assert "risk_of_ruin" in data
+    assert "confidence_intervals" in data
+    assert data["trades_with_r_count"] >= 1
+
+    mc = data["monte_carlo"]
+    assert "percentile_5th_r" in mc
+    assert "percentile_50th_r" in mc
+    assert "percentile_95th_r" in mc
+    assert len(mc["percentile_50th_r"]) > 1
+    assert "worst_consecutive_losses_95th" in mc
+
+    ci = data["confidence_intervals"]
+    assert "win_rate_ci" in ci
+    assert "expectancy_ci" in ci
+    assert "is_statistically_significant" in ci

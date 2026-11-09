@@ -22,6 +22,10 @@
 - Interactive HTML rendering and view mode toggle (Formatted View vs. Raw Markdown) for AI audit reports.
 - One-click "Copy AI Prompt" button extracting tailored system prompts and targeted questions for ChatGPT and Claude.
 - Scoped report filtering by trading period, symbol, and configurable privacy/anonymization toggles in the AI Reports tab.
+- Monte Carlo equity simulation envelope cone chart displaying 5th, 25th, 50th median, 75th, and 95th percentiles with high-DPI canvas rendering.
+- Bootstrap 95% Confidence Intervals display exposing empirical win rate, expectancy, profit factor, and average R bounds alongside statistical significance indicators.
+- Tail risk stress testing metrics covering 95th-percentile consecutive loss streaks, max drawdown, and target achievement probability in Quant & Risk.
+- Unit and browser E2E test coverage for `/api/quant` calculations, Monte Carlo visualizations, and confidence interval metrics.
 
 ## 1.1.1 — 2026-10-27
 

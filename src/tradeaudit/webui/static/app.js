@@ -1571,6 +1571,151 @@ async function viewReports() {
 
 // ------------------------------------------------------------------ quant
 
+function drawMonteCarloCone(canvas, mc) {
+  if (!canvas || !mc) return;
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const p5 = mc.percentile_5th_r || [];
+  const p25 = mc.percentile_25th_r || [];
+  const p50 = mc.percentile_50th_r || [];
+  const p75 = mc.percentile_75th_r || [];
+  const p95 = mc.percentile_95th_r || [];
+
+  if (p50.length < 2) {
+    ctx.fillStyle = "#6e7681";
+    ctx.font = "12px Segoe UI";
+    ctx.fillText("Not enough simulation points", 16, h / 2);
+    return;
+  }
+
+  const allVals = [...p5, ...p95, 0];
+  const min = Math.min(...allVals);
+  const max = Math.max(...allVals);
+  const range = (max - min) || 1;
+
+  const pad = { top: 20, bottom: 25, left: 16, right: 85 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+
+  function getX(i, n) {
+    return pad.left + (i / (n - 1)) * chartW;
+  }
+  function getY(val) {
+    return pad.top + chartH - ((val - min) / range) * chartH;
+  }
+
+  // Zero baseline
+  const zeroY = getY(0);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(pad.left, zeroY);
+  ctx.lineTo(pad.left + chartW, zeroY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Shaded Band 1: 5th to 95th Percentile (90% envelope)
+  ctx.beginPath();
+  p95.forEach((v, i) => {
+    const x = getX(i, p95.length);
+    const y = getY(v);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  for (let i = p5.length - 1; i >= 0; i--) {
+    const x = getX(i, p5.length);
+    const y = getY(p5[i]);
+    ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = "rgba(88, 166, 255, 0.10)";
+  ctx.fill();
+
+  // Shaded Band 2: 25th to 75th Percentile (50% envelope)
+  ctx.beginPath();
+  p75.forEach((v, i) => {
+    const x = getX(i, p75.length);
+    const y = getY(v);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  for (let i = p25.length - 1; i >= 0; i--) {
+    const x = getX(i, p25.length);
+    const y = getY(p25[i]);
+    ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = "rgba(88, 166, 255, 0.22)";
+  ctx.fill();
+
+  // 95th percentile upper boundary
+  ctx.strokeStyle = "#26a69a";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  p95.forEach((v, i) => {
+    const x = getX(i, p95.length);
+    const y = getY(v);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 5th percentile lower boundary
+  ctx.strokeStyle = "#ef5350";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  p5.forEach((v, i) => {
+    const x = getX(i, p5.length);
+    const y = getY(v);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 50th percentile Median trajectory line
+  ctx.strokeStyle = "#58a6ff";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  p50.forEach((v, i) => {
+    const x = getX(i, p50.length);
+    const y = getY(v);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Endpoint labels at the right
+  const lastIdx = p50.length - 1;
+  const labelX = pad.left + chartW + 6;
+  ctx.font = "11px 'Cascadia Code', Consolas, monospace";
+
+  ctx.fillStyle = "#26a69a";
+  ctx.fillText(`${fmtNum(p95[lastIdx], 1)}R (95%)`, labelX, getY(p95[lastIdx]) + 4);
+
+  ctx.fillStyle = "#58a6ff";
+  ctx.fillText(`${fmtNum(p50[lastIdx], 1)}R (Med)`, labelX, getY(p50[lastIdx]) + 4);
+
+  ctx.fillStyle = "#ef5350";
+  ctx.fillText(`${fmtNum(p5[lastIdx], 1)}R (5%)`, labelX, getY(p5[lastIdx]) + 4);
+
+  // Axis labels
+  ctx.fillStyle = "#8b949e";
+  ctx.font = "10px Segoe UI";
+  ctx.fillText("Trade 0", pad.left, h - 8);
+  ctx.fillText(`Trade ${mc.horizon_trades || lastIdx}`, pad.left + chartW - 45, h - 8);
+}
+
 async function viewQuant() {
   content().innerHTML = `<div id="quant-body">Loading\u2026</div>`;
   let q;
@@ -1581,26 +1726,90 @@ async function viewQuant() {
     content().innerHTML = emptyState("\u{1F52C}", "Not enough data", "Quant research needs closed trades with a known R-multiple.");
     return;
   }
-  const mc = q.monte_carlo, ror = q.risk_of_ruin;
+  const mc = q.monte_carlo, ror = q.risk_of_ruin, ci = q.confidence_intervals || {};
   content().innerHTML = `
-    <div class="grid grid-3">
-      <div class="kpi"><div class="kpi-label">Median Final R</div><div class="kpi-value">${fmtNum(mc.final_r_median, 2)}</div></div>
-      <div class="kpi"><div class="kpi-label">5th / 95th Percentile</div><div class="kpi-value">${fmtNum(mc.final_r_5th, 1)} / ${fmtNum(mc.final_r_95th, 1)}</div></div>
-      <div class="kpi"><div class="kpi-label">Median Max Drawdown</div><div class="kpi-value loss">${fmtNum(mc.max_drawdown_median, 2)} R</div></div>
+    <div class="grid grid-4">
+      <div class="kpi"><div class="kpi-label">Median Final R</div><div class="kpi-value ${mc.final_r_median >= 0 ? 'win' : 'loss'}">${fmtNum(mc.final_r_median, 2)} R</div><div class="kpi-sub">50th percentile</div></div>
+      <div class="kpi"><div class="kpi-label">5th / 95th Percentile</div><div class="kpi-value">${fmtNum(mc.final_r_5th, 1)} / ${fmtNum(mc.final_r_95th, 1)}</div><div class="kpi-sub">Simulation envelope</div></div>
+      <div class="kpi"><div class="kpi-label">Median Max Drawdown</div><div class="kpi-value loss">${fmtNum(mc.max_drawdown_median, 2)} R</div><div class="kpi-sub">Expected path MDD</div></div>
+      <div class="kpi"><div class="kpi-label">95th %ile Max Drawdown</div><div class="kpi-value loss">${fmtNum(mc.max_drawdown_95th, 2)} R</div><div class="kpi-sub">Worst 5% tail risk</div></div>
     </div>
+
     <div class="card" style="margin-top:16px">
-      <div class="card-title">Risk of Ruin</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0">Monte Carlo Equity Simulation Envelope</div>
+        <div class="chip">${mc.simulations_count} runs · ${mc.horizon_trades} trades horizon · ${esc(mc.sampling_method.replace(/_/g, " "))}</div>
+      </div>
+      <canvas id="mc-cone-canvas" class="mc-cone-canvas" style="width:100%;height:320px;display:block"></canvas>
+      <div class="mc-legend">
+        <div class="mc-legend-item"><span class="mc-legend-dot" style="background:#26a69a"></span> <b>95th Percentile</b> (Optimistic path)</div>
+        <div class="mc-legend-item"><span class="mc-legend-dot" style="background:#58a6ff"></span> <b>50th Percentile</b> (Median expected equity)</div>
+        <div class="mc-legend-item"><span class="mc-legend-dot" style="background:#ef5350"></span> <b>5th Percentile</b> (Downside stress test)</div>
+        <div class="mc-legend-item"><span class="mc-legend-dot" style="background:rgba(88,166,255,0.25)"></span> <b>50% Interquartile Band</b> (25th–75th)</div>
+      </div>
+    </div>
+
+    ${ci.win_rate_ci ? `
+    <div class="card" style="margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div class="card-title" style="margin:0">Bootstrap 95% Confidence Intervals & Statistical Edge</div>
+        <span class="pill ${ci.is_statistically_significant ? 'win' : 'warn'}">
+          ${ci.is_statistically_significant ? '✅ Statistically Significant (p < 0.05)' : '⚠️ Edge Not Statistically Confirmed'}
+        </span>
+      </div>
+      <div class="grid grid-4">
+        <div class="kpi">
+          <div class="kpi-label">Win Rate (95% CI)</div>
+          <div class="kpi-value">${fmtNum(ci.win_rate_ci[0], 1)}% — ${fmtNum(ci.win_rate_ci[1], 1)}%</div>
+          <div class="kpi-sub">Sample size: ${ci.sample_size} trades</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Expectancy (95% CI)</div>
+          <div class="kpi-value ${ci.expectancy_ci[0] >= 0 ? 'win' : 'loss'}">${fmtNum(ci.expectancy_ci[0], 2)}R — ${fmtNum(ci.expectancy_ci[1], 2)}R</div>
+          <div class="kpi-sub">${ci.expectancy_ci[0] > 0 ? 'Robust positive edge' : 'Lower bound includes negative R'}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Profit Factor (95% CI)</div>
+          <div class="kpi-value">${fmtNum(ci.profit_factor_ci[0], 2)} — ${fmtNum(ci.profit_factor_ci[1], 2)}</div>
+          <div class="kpi-sub">${ci.profit_factor_ci[0] >= 1.0 ? 'Profitable in >=95% of bootstrap paths' : 'Includes sub-1.0 breakeven'}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Average R (95% CI)</div>
+          <div class="kpi-value ${ci.avg_r_ci[0] >= 0 ? 'win' : 'loss'}">${fmtNum(ci.avg_r_ci[0], 2)}R — ${fmtNum(ci.avg_r_ci[1], 2)}R</div>
+          <div class="kpi-sub">Mean expected return per trade</div>
+        </div>
+      </div>
+      ${ci.warnings && ci.warnings.length ? `<ul class="kpi-sub" style="margin-top:12px;color:var(--warn)">${ci.warnings.map(w => `<li>⚠️ ${esc(w)}</li>`).join("")}</ul>` : ''}
+    </div>
+    ` : ''}
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">Stress Testing & Risk of Ruin</div>
       <div class="grid grid-3">
         <div><div class="kpi-label">Risk Level</div><div class="kpi-value">${esc(ror.risk_level.replace(/_/g, " "))}</div></div>
-        <div><div class="kpi-label">Empirical Probability</div><div class="kpi-value">${fmtNum(ror.empirical_ruin_probability, 1)}%</div></div>
-        <div><div class="kpi-label">Formulaic Probability</div><div class="kpi-value">${fmtNum(ror.formulaic_ruin_probability, 1)}%</div></div>
+        <div><div class="kpi-label">Empirical Ruin Probability</div><div class="kpi-value">${fmtNum(ror.empirical_ruin_probability, 1)}%</div></div>
+        <div><div class="kpi-label">Formulaic Ruin Probability</div><div class="kpi-value">${fmtNum(ror.formulaic_ruin_probability, 1)}%</div></div>
       </div>
-      <div class="kpi-sub" style="margin-top:12px">${esc(ror.summary_verdict)}</div>
-      <div class="kpi-sub" style="margin-top:8px">Horizon: ${ror.simulation_horizon_trades} trades · ${esc(mc.sampling_method.replace(/_/g, " "))}</div>
-      <ul class="kpi-sub">${(ror.assumptions || []).map((a) => `<li>${esc(a)}</li>`).join("")}</ul>
+      <div class="grid grid-3" style="margin-top:12px">
+        <div><div class="kpi-label">Worst 95% Consecutive Losses</div><div class="kpi-value loss">${mc.worst_consecutive_losses_95th} trades</div></div>
+        <div><div class="kpi-label">Target (+20R) Achievement Prob</div><div class="kpi-value win">${fmtNum(mc.probability_of_target_r, 1)}%</div></div>
+        <div><div class="kpi-label">Ruin (-10R) Threshold Prob</div><div class="kpi-value ${mc.probability_of_ruin_threshold > 5 ? 'loss' : 'win'}">${fmtNum(mc.probability_of_ruin_threshold, 1)}%</div></div>
+      </div>
+      <div class="kpi-sub" style="margin-top:14px">${esc(ror.summary_verdict)}</div>
+      <ul class="kpi-sub" style="margin-top:8px">${(ror.assumptions || []).map((a) => `<li>${esc(a)}</li>`).join("")}</ul>
     </div>
+
     ${renderRollingTable(q.rolling_analytics)}
   `;
+
+  const canvas = document.getElementById("mc-cone-canvas");
+  if (canvas) {
+    drawMonteCarloCone(canvas, mc);
+    window.addEventListener("resize", () => {
+      const c = document.getElementById("mc-cone-canvas");
+      if (c) drawMonteCarloCone(c, mc);
+    }, { once: true });
+  }
 }
 
 function renderRollingTable(rolling) {
