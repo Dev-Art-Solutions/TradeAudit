@@ -1229,39 +1229,295 @@ function perfRow(label, m) {
 
 // ------------------------------------------------------------------ breakdowns
 
-async function viewBreakdowns() {
-  content().innerHTML = `<div id="bd-body">Loading\u2026</div>`;
-  let b;
-  try { b = await apiGet("/breakdown"); } catch (e) {
-    content().innerHTML = emptyState("\u26A0\uFE0F", "Could not load", e.message); return;
-  }
-  const dims = [
-    ["By Symbol", b.by_symbol], ["By Direction", b.by_direction], ["By Session", b.by_session],
-    ["By Weekday", b.by_weekday], ["By Hour", b.by_hour], ["By Emotion", b.by_emotion],
-  ];
-  const nonEmpty = dims.filter(([, d]) => d && Object.keys(d).length);
-  if (!nonEmpty.length) {
-    content().innerHTML = emptyState("\u{1F50D}", "No data yet", "Sync trades to see multi-dimensional breakdowns.");
-    return;
-  }
-  content().innerHTML = nonEmpty.map(([title, dict]) => breakdownTable(title, dict)).join("");
+const BREAKDOWN_DIM_LABELS = {
+  POST_WIN: "🟢 Post-Win Trade",
+  POST_LOSS: "🔴 Post-Loss Trade",
+  INITIAL_OR_BE: "⚪ Initial / Post-BE",
+  STREAK_0: "⚪ Initial Trade (Streak 0)",
+  WIN_STREAK_1: "🏆 Win Streak: 1",
+  WIN_STREAK_2: "🏆 Win Streak: 2",
+  WIN_STREAK_3_PLUS: "🔥 Win Streak: 3+",
+  LOSS_STREAK_1: "⚠️ Loss Streak: 1",
+  LOSS_STREAK_2: "⚠️ Loss Streak: 2",
+  LOSS_STREAK_3_PLUS: "🚨 Loss Streak: 3+",
+  CALM: "😌 Calm",
+  FOMO: "⚡ FOMO",
+  REVENGE: "🔥 Revenge",
+  GREED: "🤑 Greed",
+  FEAR: "😨 Fear",
+  BOREDOM: "🥱 Boredom",
+};
+
+function formatBreakdownKey(key) {
+  const k = String(key).trim();
+  return BREAKDOWN_DIM_LABELS[k] || esc(k);
 }
 
-function breakdownTable(title, dict) {
-  const rows = Object.entries(dict).map(([key, m]) => `
-    <tr>
-      <td>${esc(String(key))}</td>
-      <td class="mono">${m.total_trades}</td>
-      <td class="mono">${fmtPct(m.win_rate)}</td>
-      <td class="mono ${m.expectancy_r >= 0 ? "text-win" : "text-loss"}">${fmtNum(m.expectancy_r, 3)}</td>
-      <td class="mono ${m.net_profit >= 0 ? "text-win" : "text-loss"}">${fmtNum(m.net_profit)}</td>
-    </tr>`).join("");
-  return `<div class="card">
-    <div class="card-title">${title}</div>
-    <div class="table-wrap" style="max-height:260px">
-      <table><thead><tr><th></th><th>Trades</th><th>Win Rate</th><th>Expectancy R</th><th>Net P/L</th></tr></thead>
-      <tbody>${rows}</tbody></table>
-    </div></div>`;
+function drawHourlyBarChart(canvas, hourlyData) {
+  if (!canvas || !hourlyData) return;
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const hours = Array.from({ length: 24 }, (_, i) => String(i));
+  const profits = hours.map((hr) => {
+    const m = hourlyData[hr] || hourlyData[parseInt(hr, 10)];
+    return m ? (m.net_profit || 0) : 0;
+  });
+  const trades = hours.map((hr) => {
+    const m = hourlyData[hr] || hourlyData[parseInt(hr, 10)];
+    return m ? (m.total_trades || 0) : 0;
+  });
+
+  const minP = Math.min(...profits, 0);
+  const maxP = Math.max(...profits, 0);
+  const range = (maxP - minP) || 10;
+
+  const pad = { top: 24, bottom: 26, left: 16, right: 16 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+
+  function getY(p) {
+    return pad.top + chartH - ((p - minP) / range) * chartH;
+  }
+
+  const zeroY = getY(0);
+
+  // Zero baseline
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, zeroY);
+  ctx.lineTo(pad.left + chartW, zeroY);
+  ctx.stroke();
+
+  const slotW = chartW / 24;
+  const barW = Math.max(4, slotW * 0.7);
+
+  hours.forEach((hr, i) => {
+    const count = trades[i];
+    const p = profits[i];
+    const x = pad.left + i * slotW + (slotW - barW) / 2;
+
+    if (count > 0 && Math.abs(p) > 0.001) {
+      const y = getY(p);
+      const barH = Math.abs(zeroY - y);
+      const topY = p >= 0 ? y : zeroY;
+
+      ctx.fillStyle = p >= 0 ? "rgba(38, 166, 154, 0.85)" : "rgba(239, 83, 80, 0.85)";
+      ctx.fillRect(x, topY, barW, Math.max(2, barH));
+
+      ctx.strokeStyle = p >= 0 ? "#26a69a" : "#ef5350";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, topY, barW, Math.max(2, barH));
+    } else if (count > 0) {
+      ctx.fillStyle = "#8b949e";
+      ctx.fillRect(x, zeroY - 2, barW, 4);
+    }
+
+    if (i % 2 === 0 || count > 0) {
+      ctx.fillStyle = count > 0 ? "#e6edf3" : "#6e7681";
+      ctx.font = count > 0 ? "bold 10px 'Cascadia Code', monospace" : "9px 'Cascadia Code', monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(hr.padStart(2, "0"), x + barW / 2, h - 8);
+    }
+  });
+
+  ctx.textAlign = "left";
+  ctx.font = "11px Segoe UI";
+  ctx.fillStyle = "#8b949e";
+  ctx.fillText("Net P/L by Trade Entry Hour (00:00 – 23:00 UTC)", pad.left, 14);
+}
+
+function renderBreakdownInsights(b) {
+  const insights = [];
+
+  if (b.by_symbol) {
+    const symbols = Object.entries(b.by_symbol).filter(([, m]) => m.total_trades > 0);
+    if (symbols.length) {
+      symbols.sort((a, b) => (b[1].net_profit || 0) - (a[1].net_profit || 0));
+      const best = symbols[0];
+      insights.push(`
+        <div class="bd-insight-card">
+          <div class="bd-insight-label">Top Instrument</div>
+          <div class="bd-insight-val">${esc(best[0])}</div>
+          <div class="bd-insight-sub text-win">${fmtNum(best[1].net_profit)} (${fmtNum(best[1].expectancy_r, 2)}R · ${fmtPct(best[1].win_rate)} WR)</div>
+        </div>
+      `);
+    }
+  }
+
+  if (b.by_session) {
+    const sessions = Object.entries(b.by_session).filter(([, m]) => m.total_trades > 0);
+    if (sessions.length) {
+      sessions.sort((a, b) => (b[1].net_profit || 0) - (a[1].net_profit || 0));
+      const best = sessions[0];
+      insights.push(`
+        <div class="bd-insight-card">
+          <div class="bd-insight-label">Optimal Session</div>
+          <div class="bd-insight-val">${esc(best[0])}</div>
+          <div class="bd-insight-sub text-win">${fmtNum(best[1].net_profit)} (${fmtNum(best[1].expectancy_r, 2)}R · ${best[1].total_trades} trades)</div>
+        </div>
+      `);
+    }
+  }
+
+  if (b.by_weekday) {
+    const days = Object.entries(b.by_weekday).filter(([, m]) => m.total_trades > 0);
+    if (days.length) {
+      days.sort((a, b) => (b[1].net_profit || 0) - (a[1].net_profit || 0));
+      const best = days[0];
+      insights.push(`
+        <div class="bd-insight-card">
+          <div class="bd-insight-label">Prime Weekday</div>
+          <div class="bd-insight-val">${esc(best[0])}</div>
+          <div class="bd-insight-sub text-win">${fmtNum(best[1].net_profit)} (${fmtPct(best[1].win_rate)} WR)</div>
+        </div>
+      `);
+    }
+  }
+
+  if (b.by_context && b.by_context.POST_LOSS && b.by_context.POST_WIN) {
+    const pl = b.by_context.POST_LOSS;
+    const pw = b.by_context.POST_WIN;
+    if (pl.total_trades > 0 && pw.total_trades > 0) {
+      const isDrag = pl.expectancy_r < pw.expectancy_r && pl.expectancy_r < 0;
+      insights.push(`
+        <div class="bd-insight-card">
+          <div class="bd-insight-label">Post-Loss Sequence</div>
+          <div class="bd-insight-val ${isDrag ? 'text-loss' : 'text-win'}">${fmtNum(pl.expectancy_r, 2)}R Exp</div>
+          <div class="bd-insight-sub">${isDrag ? '⚠️ Post-loss drag vs ' + fmtNum(pw.expectancy_r, 2) + 'R post-win' : 'Disciplined post-loss execution'}</div>
+        </div>
+      `);
+    }
+  }
+
+  if (!insights.length) return "";
+  return `<div class="bd-insights-grid">${insights.join("")}</div>`;
+}
+
+function breakdownTable(title, dict, categoryClass = "") {
+  if (!dict || !Object.keys(dict).length) return "";
+  const rows = Object.entries(dict)
+    .filter(([, m]) => m.total_trades > 0)
+    .map(([key, m]) => {
+      const pf = m.profit_factor !== null && m.profit_factor !== undefined ? fmtNum(m.profit_factor, 2) : "—";
+      const winPct = Math.round((m.win_rate || 0) * 100);
+      return `
+        <tr>
+          <td><b>${formatBreakdownKey(key)}</b></td>
+          <td class="mono">${m.total_trades}</td>
+          <td>
+            <div class="win-rate-bar-wrap">
+              <div class="win-rate-bar-bg"><div class="win-rate-bar-fill" style="width:${winPct}%"></div></div>
+              <span class="mono">${fmtPct(m.win_rate)}</span>
+            </div>
+          </td>
+          <td class="mono">${pf}</td>
+          <td class="mono ${m.expectancy_r >= 0 ? "text-win" : "text-loss"}">${fmtNum(m.expectancy_r, 3)}R</td>
+          <td class="mono ${m.net_profit >= 0 ? "text-win" : "text-loss"}"><b>${fmtNum(m.net_profit)}</b></td>
+        </tr>`;
+    }).join("");
+
+  if (!rows) return "";
+  return `
+    <div class="card bd-card ${categoryClass}" style="margin-top:12px">
+      <div class="card-title">${title}</div>
+      <div class="table-wrap" style="max-height:280px">
+        <table>
+          <thead><tr><th>Category</th><th>Trades</th><th>Win Rate</th><th>Profit Factor</th><th>Expectancy</th><th>Net P/L</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+async function viewBreakdowns() {
+  content().innerHTML = `<div id="bd-body">Loading…</div>`;
+  let b;
+  try { b = await apiGet("/breakdown"); } catch (e) {
+    content().innerHTML = emptyState("⚠️", "Could not load", e.message); return;
+  }
+
+  const hasData = Object.values(b).some((d) => d && Object.keys(d).length && Object.values(d).some(m => m && m.total_trades > 0));
+  if (!hasData) {
+    content().innerHTML = emptyState("🔍", "No data yet", "Sync trades to see multi-dimensional breakdowns.");
+    return;
+  }
+
+  content().innerHTML = `
+    ${renderBreakdownInsights(b)}
+
+    <div class="toolbar" style="margin-bottom:12px">
+      <div class="dimension-filter-bar">
+        <button class="btn btn-sm bd-filter-btn active" data-bd-cat="all">All Dimensions</button>
+        <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="instrument">Symbol & Direction</button>
+        <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="time">Time & Sessions</button>
+        <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="sequence">Sequence & Streaks</button>
+        <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="emotion">Psychology & Emotion</button>
+      </div>
+    </div>
+
+    <div id="bd-content">
+      <div class="bd-group cat-instrument">
+        ${breakdownTable("By Symbol", b.by_symbol)}
+        ${breakdownTable("By Direction (BUY vs SELL)", b.by_direction)}
+      </div>
+
+      <div class="bd-group cat-time">
+        <div class="card" style="margin-top:12px">
+          <div class="card-title" style="margin-bottom:4px">Hourly P/L & Distribution (24-Hour Cycle)</div>
+          <canvas id="hourly-bar-canvas" class="hourly-bar-canvas"></canvas>
+        </div>
+        ${breakdownTable("By Trading Session", b.by_session)}
+        ${breakdownTable("By Day of Week", b.by_weekday)}
+      </div>
+
+      <div class="bd-group cat-sequence">
+        ${breakdownTable("Contextual Trade Sequence (Post-Win vs Post-Loss)", b.by_context)}
+        ${breakdownTable("Win & Loss Streaks Preceding Entry", b.by_streak)}
+      </div>
+
+      <div class="bd-group cat-emotion">
+        ${breakdownTable("Psychological Emotion Tags", b.by_emotion)}
+      </div>
+    </div>
+  `;
+
+  const canvas = document.getElementById("hourly-bar-canvas");
+  if (canvas && b.by_hour) {
+    drawHourlyBarChart(canvas, b.by_hour);
+    window.addEventListener("resize", () => {
+      const c = document.getElementById("hourly-bar-canvas");
+      if (c && b.by_hour) drawHourlyBarChart(c, b.by_hour);
+    }, { once: true });
+  }
+
+  document.querySelectorAll(".bd-filter-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".bd-filter-btn").forEach((b) => {
+        b.classList.add("btn-subtle");
+        b.classList.remove("active");
+      });
+      btn.classList.remove("btn-subtle");
+      btn.classList.add("active");
+
+      const cat = btn.dataset.bdCat;
+      document.querySelectorAll("#bd-content .bd-group").forEach((group) => {
+        if (cat === "all") {
+          group.style.display = "block";
+        } else if (group.classList.contains(`cat-${cat}`)) {
+          group.style.display = "block";
+        } else {
+          group.style.display = "none";
+        }
+      });
+    });
+  });
 }
 
 // ------------------------------------------------------------------ live journal

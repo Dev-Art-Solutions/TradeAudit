@@ -503,3 +503,36 @@ def test_quant_endpoint_returns_monte_carlo_and_confidence_intervals(client, exi
     assert "win_rate_ci" in ci
     assert "expectancy_ci" in ci
     assert "is_statistically_significant" in ci
+
+def test_breakdown_endpoint_returns_all_eight_dimensions_with_seeded_trades(client, existing_trade_id):
+    from tradeaudit.infrastructure.database.models import TradeModel
+    ctx = client.app.state.tradeaudit_context
+    with ctx.db_manager.session_scope() as session:
+        trade = session.query(TradeModel).filter(TradeModel.id == existing_trade_id).first()
+        trade.symbol = "EURUSD"
+        trade.direction = "BUY"
+        trade.status = "CLOSED"
+        trade.profit = 120.0
+        trade.realized_r = 2.4
+        trade.emotion_tag = "CALM"
+        session.commit()
+
+    res = client.get("/api/breakdown")
+    assert res.status_code == 200
+    b = res.json()
+
+    assert "by_symbol" in b
+    assert "by_direction" in b
+    assert "by_session" in b
+    assert "by_weekday" in b
+    assert "by_hour" in b
+    assert "by_context" in b
+    assert "by_streak" in b
+    assert "by_emotion" in b
+
+    assert "EURUSD" in b["by_symbol"]
+    assert b["by_symbol"]["EURUSD"]["total_trades"] >= 1
+    assert "BUY" in b["by_direction"]
+    assert "CALM" in b["by_emotion"]
+    assert "POST_WIN" in b["by_context"]
+    assert "STREAK_0" in b["by_streak"]

@@ -26,6 +26,11 @@
 - Bootstrap 95% Confidence Intervals display exposing empirical win rate, expectancy, profit factor, and average R bounds alongside statistical significance indicators.
 - Tail risk stress testing metrics covering 95th-percentile consecutive loss streaks, max drawdown, and target achievement probability in Quant & Risk.
 - Unit and browser E2E test coverage for `/api/quant` calculations, Monte Carlo visualizations, and confidence interval metrics.
+- Multi-dimensional breakdown analytics suite exposing all 8 dimensions: Symbol, Direction, Session, Weekday, Hourly, Contextual Sequence (Post-Win vs Post-Loss), Streaks, and Emotion.
+- Hourly distribution visual bar chart plotting net P/L and trade frequency across the 24-hour UTC cycle.
+- Key breakdown insights hero strip highlighting top instrument, optimal session, peak weekday, and post-loss revenge drag indicators.
+- Category navigation filter and visual win rate mini progress bars across breakdown tables.
+- Unit and browser E2E test coverage for `/api/breakdown` multi-dimensional calculations and interactive views.
 
 ## 1.1.1 — 2026-10-27
 

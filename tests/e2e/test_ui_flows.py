@@ -344,3 +344,18 @@ def test_quant_view_monte_carlo_cone_and_confidence_intervals(page, live_server,
     assert page.is_visible("text=Monte Carlo Equity Simulation Envelope")
     assert page.is_visible("text=Bootstrap 95% Confidence Intervals")
     assert page.is_visible(".mc-legend")
+
+
+def test_breakdowns_view_dimensions_and_hourly_chart(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#breakdowns")
+    page.wait_for_selector("#hourly-bar-canvas", timeout=15000)
+    assert page.is_visible("#hourly-bar-canvas")
+    assert page.is_visible(".bd-insights-grid")
+    assert page.is_visible(".dimension-filter-bar")
+    assert page.is_visible("text=By Symbol")
+    assert page.is_visible("text=Contextual Trade Sequence")
+
+    # Filter to Sequence & Streaks category
+    page.click('[data-bd-cat="sequence"]')
+    page.wait_for_selector(".cat-sequence", timeout=5000)
+    assert page.is_visible("text=Contextual Trade Sequence")
