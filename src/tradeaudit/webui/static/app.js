@@ -1186,35 +1186,526 @@ async function deleteStrategy(id) {
 
 // ------------------------------------------------------------------ strategy vs trader
 
-async function viewStrategyVsTrader() {
-  content().innerHTML = `<div id="svt-body">Loading\u2026</div>`;
-  let c;
-  try { c = await apiGet("/strategy-vs-trader"); } catch (e) {
-    content().innerHTML = emptyState("\u26A0\uFE0F", "Could not load", e.message); return;
+const VERDICT_DETAILS = {
+  HIGH_DISCIPLINE: {
+    title: "High Discipline",
+    icon: "🛡️",
+    badge: "badge-success",
+    desc: "Exceptional rule adherence. Your strategy edge is translating cleanly to your bottom line without execution drag.",
+    recommendation: "Maintain current risk habits and rule adherence. Your execution is an asset.",
+  },
+  EXECUTION_BREAKDOWN: {
+    title: "Execution Breakdown",
+    icon: "🚨",
+    badge: "badge-danger",
+    desc: "Your core strategy has positive expectancy, but manual deviations and impulsive errors are actively erasing your edge.",
+    recommendation: "Stop taking unassigned setups and eliminate Bad Losses. Strict rule compliance will immediately restore profits.",
+  },
+  FLAWED_STRATEGY_LUCKY_DEVIATIONS: {
+    title: "False Edge / Lucky Deviations",
+    icon: "⚠️",
+    badge: "badge-warning",
+    desc: "Your defined strategy generated negative returns, but undisciplined deviations temporarily produced positive P/L.",
+    recommendation: "Beware of false security. Re-audit your core strategy rules before luck runs out.",
+  },
+  FLAWED_STRATEGY_AND_EXECUTION: {
+    title: "Dual Deficit (System & Execution)",
+    icon: "⛔",
+    badge: "badge-danger",
+    desc: "Both your strategy edge and trader execution show negative expectancy during this audit period.",
+    recommendation: "Reduce size or trade demo. Address entry edge first, then establish strict execution discipline.",
+  },
+  ALL_TRADES_DEVIATIONS: {
+    title: "Pure Discretionary / No Adherence",
+    icon: "🔄",
+    badge: "badge-warning",
+    desc: "None of your closed trades complied with your strategy rules. You are currently trading purely off-script.",
+    recommendation: "Review whether your defined strategies match your actual trading style, or commit to waiting for valid setups.",
+  },
+  NO_STRATEGY_ASSIGNED: {
+    title: "No Strategy Assigned",
+    icon: "ℹ️",
+    badge: "badge-info",
+    desc: "Trades have not been checked against defined strategies yet.",
+    recommendation: "Navigate to the Trades tab and assign strategies to audit your execution discipline.",
+  },
+  BALANCED: {
+    title: "Balanced Execution",
+    icon: "⚖️",
+    badge: "badge-info",
+    desc: "Solid execution baseline with moderate adherence and standard market variance.",
+    recommendation: "Focus on turning partial deviations into 100% compliant executions.",
+  },
+};
+
+function filterTradesByQuadrant(compliance, outcome) {
+  state.tradeFilter = {
+    search: "",
+    direction: "ALL",
+    outcome: outcome || "ALL",
+    strategyId: "ALL",
+    compliance: compliance || "ALL",
+    emotion: "ALL",
+    dateRange: "ALL",
+    symbol: "ALL",
+    sortCol: "open_time",
+    sortDir: "desc",
+  };
+  navigate("trades");
+}
+
+function renderCohortCard(title, m, extraClass, subtitle) {
+  if (!m || !m.total_trades) {
+    return `
+      <div class="svt-cohort-card ${extraClass || ""}">
+        <div class="svt-cohort-title">${esc(title)}</div>
+        <div class="svt-cohort-sub">${esc(subtitle || "")}</div>
+        <div class="svt-cohort-empty">No trades in this cohort</div>
+      </div>`;
   }
-  if (!c.total_performance.total_trades) {
-    content().innerHTML = emptyState("\u2696\uFE0F", "No data yet", "Sync trades and assign strategies to see the compliance quadrant.");
+  return `
+    <div class="svt-cohort-card ${extraClass || ""}">
+      <div class="svt-cohort-title">${esc(title)}</div>
+      <div class="svt-cohort-sub">${esc(subtitle || "")}</div>
+      <div class="svt-cohort-kpis">
+        <div><span class="lbl">Trades:</span> <b>${m.total_trades}</b></div>
+        <div><span class="lbl">Win Rate:</span> <b>${fmtPct(m.win_rate)}</b></div>
+        <div><span class="lbl">Expectancy R:</span> <b class="${m.expectancy_r >= 0 ? "win" : "loss"}">${fmtNum(m.expectancy_r, 3)}</b></div>
+        <div><span class="lbl">Profit Factor:</span> <b>${m.profit_factor ? fmtNum(m.profit_factor, 2) : "—"}</b></div>
+        <div><span class="lbl">Net Profit:</span> <b class="${m.net_profit >= 0 ? "win" : "loss"}">${fmtNum(m.net_profit)}</b></div>
+        <div><span class="lbl">Max DD:</span> <b class="loss">${fmtNum(m.max_drawdown_monetary)}</b></div>
+      </div>
+      <div class="win-rate-bar-wrap" style="margin-top: 10px;">
+        <span class="lbl" style="font-size: 11px;">Win %</span>
+        <div class="win-rate-bar-bg">
+          <div class="win-rate-bar-fill" style="width: ${Math.min(100, Math.max(0, m.win_rate * 100))}%"></div>
+        </div>
+        <span style="font-size: 11px; font-weight: 600;">${(m.win_rate * 100).toFixed(0)}%</span>
+      </div>
+    </div>`;
+}
+
+function drawDisciplineScatter(canvas, trades) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 800;
+  const h = canvas.clientHeight || 280;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const closedTrades = (trades || []).filter(
+    (t) => t.status === "CLOSED" && t.realized_r !== null && t.realized_r !== undefined
+  );
+
+  const pad = { top: 32, bottom: 28, left: 45, right: 30 };
+  const chartW = Math.max(100, w - pad.left - pad.right);
+  const chartH = Math.max(100, h - pad.top - pad.bottom);
+  const midY = pad.top + chartH / 2;
+
+  // Determine R bounds
+  let rVals = closedTrades.map((t) => t.realized_r);
+  if (!rVals.length) rVals = [-2, 2];
+  let minR = Math.min(-2, ...rVals);
+  let maxR = Math.max(2, ...rVals);
+  const span = Math.max(2.5, Math.max(Math.abs(minR), Math.abs(maxR)) * 1.15);
+  minR = -span;
+  maxR = span;
+  const rRange = maxR - minR;
+
+  function getX(r) {
+    return pad.left + ((r - minR) / rRange) * chartW;
+  }
+  const zeroX = getX(0);
+
+  // 1. Shaded Quadrant Backgrounds
+  // Top-Left: Good Losses (Compliant, R < 0)
+  ctx.fillStyle = "rgba(79, 140, 255, 0.05)";
+  ctx.fillRect(pad.left, pad.top, zeroX - pad.left, midY - pad.top);
+
+  // Top-Right: Good Wins (Compliant, R >= 0)
+  ctx.fillStyle = "rgba(38, 166, 154, 0.08)";
+  ctx.fillRect(zeroX, pad.top, pad.left + chartW - zeroX, midY - pad.top);
+
+  // Bottom-Left: Bad Losses (Deviations, R < 0)
+  ctx.fillStyle = "rgba(239, 83, 80, 0.07)";
+  ctx.fillRect(pad.left, midY, zeroX - pad.left, pad.top + chartH - midY);
+
+  // Bottom-Right: Bad Wins (Deviations, R >= 0)
+  ctx.fillStyle = "rgba(245, 158, 11, 0.07)";
+  ctx.fillRect(zeroX, midY, pad.left + chartW - zeroX, pad.top + chartH - midY);
+
+  // 2. Grid & Axes
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+
+  const rStep = span > 4 ? 2 : 1;
+  for (let r = -Math.floor(span); r <= Math.floor(span); r += rStep) {
+    if (r === 0) continue;
+    const x = getX(r);
+    ctx.beginPath();
+    ctx.moveTo(x, pad.top);
+    ctx.lineTo(x, pad.top + chartH);
+    ctx.stroke();
+
+    ctx.fillStyle = "#6e7681";
+    ctx.font = "10px 'Cascadia Code', monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`${r > 0 ? "+" : ""}${r}R`, x, pad.top + chartH + 18);
+  }
+
+  // Horizontal Axis (Divider between Compliant & Deviations)
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(pad.left, midY);
+  ctx.lineTo(pad.left + chartW, midY);
+  ctx.stroke();
+
+  // Vertical Zero Baseline (Divider between Losses & Wins)
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(zeroX, pad.top);
+  ctx.lineTo(zeroX, pad.top + chartH);
+  ctx.stroke();
+
+  // Axis Labels
+  ctx.font = "bold 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(38, 166, 154, 0.75)";
+  ctx.fillText("▲ COMPLIANT (RULES FOLLOWED)", pad.left + 8, pad.top + 16);
+
+  ctx.fillStyle = "rgba(239, 83, 80, 0.75)";
+  ctx.fillText("▼ DEVIATIONS (RULES BROKEN)", pad.left + 8, midY + 18);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#e6edf3";
+  ctx.fillText("0.0 R", zeroX, pad.top + chartH + 18);
+
+  // Plot trade points
+  const points = [];
+  const topHalfH = midY - pad.top;
+  const btmHalfH = pad.top + chartH - midY;
+
+  closedTrades.forEach((t, i) => {
+    const x = getX(t.realized_r);
+    const isCompliant = (t.compliance_status === "COMPLIANT");
+    const seed = (t.id || (i + 1)) * 37 + (t.ticket || 11) * 17;
+    const jitter = 0.25 + ((seed % 100) / 100) * 0.5;
+
+    let y;
+    let fill, stroke, quadName;
+    if (isCompliant) {
+      y = pad.top + jitter * topHalfH;
+      if (t.net_profit >= 0) {
+        fill = "rgba(38, 166, 154, 0.85)";
+        stroke = "#26a69a";
+        quadName = "Good Win (Compliant)";
+      } else {
+        fill = "rgba(79, 140, 255, 0.85)";
+        stroke = "#4f8cff";
+        quadName = "Good Loss (Compliant)";
+      }
+    } else {
+      y = midY + jitter * btmHalfH;
+      if (t.net_profit >= 0) {
+        fill = "rgba(245, 158, 11, 0.85)";
+        stroke = "#f59e0b";
+        quadName = "Bad Win (Deviation)";
+      } else {
+        fill = "rgba(239, 83, 80, 0.85)";
+        stroke = "#ef5350";
+        quadName = "Bad Loss (Deviation)";
+      }
+    }
+
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    points.push({ x, y, trade: t, quadName, fill, stroke });
+  });
+
+  const tooltip = document.getElementById("svt-scatter-tooltip");
+  canvas.onmousemove = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    let closest = null;
+    let minD = 15;
+    points.forEach((p) => {
+      const d = Math.hypot(p.x - mx, p.y - my);
+      if (d < minD) {
+        minD = d;
+        closest = p;
+      }
+    });
+
+    if (closest && tooltip) {
+      const tr = closest.trade;
+      const profitStr = tr.net_profit >= 0 ? `+$${fmtNum(tr.net_profit)}` : `-$${fmtNum(Math.abs(tr.net_profit))}`;
+      const rStr = `${tr.realized_r >= 0 ? "+" : ""}${fmtNum(tr.realized_r, 2)} R`;
+      const emotionStr = tr.emotion_tag ? ` · ${tr.emotion_tag}` : "";
+      tooltip.innerHTML = `<b>${esc(tr.symbol || "Trade")} #${tr.ticket || tr.id}</b> · <span class="${tr.net_profit >= 0 ? "win" : "loss"}">${profitStr} (${rStr})</span> · <i>${closest.quadName}</i>${esc(emotionStr)}`;
+      tooltip.style.display = "inline-block";
+      canvas.style.cursor = "pointer";
+    } else {
+      if (tooltip) tooltip.style.display = "none";
+      canvas.style.cursor = "default";
+    }
+  };
+
+  canvas.onclick = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    let clicked = null;
+    let minD = 15;
+    points.forEach((p) => {
+      const d = Math.hypot(p.x - mx, p.y - my);
+      if (d < minD) {
+        minD = d;
+        clicked = p;
+      }
+    });
+    if (clicked && clicked.trade) {
+      state.selectedTradeId = clicked.trade.id;
+      navigate("trade-chart");
+    }
+  };
+}
+
+async function viewStrategyVsTrader() {
+  content().innerHTML = `<div id="svt-body">Loading…</div>`;
+  let c;
+  try {
+    [c] = await Promise.all([
+      apiGet("/strategy-vs-trader"),
+      loadTrades(),
+    ]);
+  } catch (e) {
+    content().innerHTML = emptyState("⚠️", "Could not load", e.message);
     return;
   }
+
+  if (!c.total_performance || !c.total_performance.total_trades) {
+    content().innerHTML = emptyState("⚖️", "No data yet", "Sync trades and assign strategies to see the compliance quadrant.");
+    return;
+  }
+
   const q = c.four_quadrants;
+  const compliantCount = (c.compliant_performance && c.compliant_performance.total_trades) || 0;
+  const deviationCount = (c.deviation_performance && c.deviation_performance.total_trades) || 0;
+  const emotionalCount = (c.emotional_performance && c.emotional_performance.total_trades) || 0;
+  const assignedTotal = compliantCount + deviationCount;
+  const disciplineScore = assignedTotal > 0 ? (compliantCount / assignedTotal) * 100 : 0;
+
+  const vInfo = VERDICT_DETAILS[c.quality_verdict] || {
+    title: esc(c.quality_verdict),
+    icon: "⚖️",
+    badge: "badge-info",
+    desc: "Execution audit complete.",
+    recommendation: "Review your quadrant metrics below.",
+  };
+
+  const gwPct = assignedTotal > 0 ? ((q.good_wins_count / assignedTotal) * 100).toFixed(1) : "0.0";
+  const glPct = assignedTotal > 0 ? ((q.good_losses_count / assignedTotal) * 100).toFixed(1) : "0.0";
+  const bwPct = assignedTotal > 0 ? ((q.bad_wins_count / assignedTotal) * 100).toFixed(1) : "0.0";
+  const blPct = assignedTotal > 0 ? ((q.bad_losses_count / assignedTotal) * 100).toFixed(1) : "0.0";
+
   content().innerHTML = `
-    <div class="grid grid-4">
-      <div class="kpi"><div class="kpi-label">Good Wins</div><div class="kpi-value win">${q.good_wins_count}</div><div class="kpi-sub">${fmtNum(q.good_wins_net_r, 2)} R</div></div>
-      <div class="kpi"><div class="kpi-label">Good Losses</div><div class="kpi-value">${q.good_losses_count}</div><div class="kpi-sub">${fmtNum(q.good_losses_net_r, 2)} R</div></div>
-      <div class="kpi"><div class="kpi-label">Bad Wins</div><div class="kpi-value">${q.bad_wins_count}</div><div class="kpi-sub">${fmtNum(q.bad_wins_net_r, 2)} R</div></div>
-      <div class="kpi"><div class="kpi-label">Bad Losses</div><div class="kpi-value loss">${q.bad_losses_count}</div><div class="kpi-sub">${fmtNum(q.bad_losses_net_r, 2)} R</div></div>
-    </div>
-    <div class="card" style="margin-top:16px">
-      <div class="card-title">Deviation Cost</div>
-      <div class="grid grid-2">
-        <div><div class="kpi-label">Cost in R</div><div class="kpi-value loss">${fmtNum(c.deviation_cost_r, 2)}</div></div>
-        <div><div class="kpi-label">Cost Monetary</div><div class="kpi-value loss">${fmtNum(c.deviation_cost_monetary)}</div></div>
+    <!-- Top Hero Strip: Discipline Health & Diagnostics -->
+    <div class="svt-hero-strip">
+      <div class="svt-hero-card">
+        <div class="kpi-label">Discipline Score</div>
+        <div class="svt-score-wrap">
+          <div class="svt-score-val ${disciplineScore >= 80 ? "win" : disciplineScore >= 60 ? "" : "loss"}">
+            ${disciplineScore.toFixed(0)}%
+          </div>
+          <div class="svt-score-sub">${compliantCount} of ${assignedTotal} audited trades compliant</div>
+        </div>
+        <div class="svt-progress-bar">
+          <div class="svt-progress-fill ${disciplineScore >= 80 ? "bg-win" : disciplineScore >= 60 ? "bg-warn" : "bg-loss"}" style="width: ${Math.min(100, Math.max(5, disciplineScore))}%"></div>
+        </div>
       </div>
-      <div class="kpi-sub" style="margin-top:12px">Quality verdict: ${esc(c.quality_verdict)}</div>
+
+      <div class="svt-hero-card">
+        <div class="kpi-label">Deviation Cost (Capital Leak)</div>
+        <div class="kpi-value ${c.deviation_cost_r > 0 ? "loss" : "win"}">
+          ${fmtNum(c.deviation_cost_r, 2)} R
+        </div>
+        <div class="kpi-sub">
+          Monetary drag: <b class="${c.deviation_cost_monetary > 0 ? "loss" : "win"}">${fmtNum(c.deviation_cost_monetary)}</b>
+        </div>
+      </div>
+
+      <div class="svt-hero-card">
+        <div class="kpi-label">Bad Losses Drain</div>
+        <div class="kpi-value loss">
+          ${fmtNum(q.bad_losses_profit)}
+        </div>
+        <div class="kpi-sub">
+          ${q.bad_losses_count} unforced error trades (${fmtNum(q.bad_losses_net_r, 2)} R)
+        </div>
+      </div>
+
+      <div class="svt-hero-card svt-verdict-card">
+        <div class="svt-verdict-header">
+          <span class="svt-verdict-icon">${vInfo.icon}</span>
+          <div>
+            <div class="svt-verdict-title">${vInfo.title}</div>
+            <span class="badge ${vInfo.badge}">${esc(c.quality_verdict)}</span>
+          </div>
+        </div>
+        <div class="svt-verdict-desc">${vInfo.desc}</div>
+      </div>
     </div>
-    ${perfRow("Compliant", c.compliant_performance)}
-    ${perfRow("Deviation", c.deviation_performance)}
+
+    <!-- Four-Quadrant Matrix 2x2 -->
+    <div class="card svt-matrix-container" style="margin-top: 16px;">
+      <div class="card-header-row">
+        <div>
+          <div class="card-title">Four-Quadrant Execution Matrix</div>
+          <div class="card-sub">Process Adherence (Rules) vs Outcome (Profit / Loss)</div>
+        </div>
+        <div class="svt-matrix-legend">
+          <span class="svt-legend-item"><span class="svt-dot dot-good-win"></span> Good Win</span>
+          <span class="svt-legend-item"><span class="svt-dot dot-good-loss"></span> Good Loss</span>
+          <span class="svt-legend-item"><span class="svt-dot dot-bad-win"></span> Bad Win</span>
+          <span class="svt-legend-item"><span class="svt-dot dot-bad-loss"></span> Bad Loss</span>
+        </div>
+      </div>
+
+      <div class="svt-matrix-layout">
+        <!-- Column Header Labels -->
+        <div class="svt-col-headers">
+          <div class="svt-corner-label">PROCESS \\ OUTCOME</div>
+          <div class="svt-col-title svt-col-win">WINNING TRADES (P/L &gt; 0)</div>
+          <div class="svt-col-title svt-col-loss">LOSING TRADES (P/L &lt; 0)</div>
+        </div>
+
+        <!-- Row 1: Followed Rules (Compliant) -->
+        <div class="svt-matrix-row">
+          <div class="svt-row-title svt-row-compliant">
+            <div class="svt-row-badge">RULES FOLLOWED</div>
+            <div class="svt-row-sub">Compliant Execution</div>
+          </div>
+
+          <!-- Quadrant I: Good Wins -->
+          <div class="svt-quadrant-card quadrant-good-win">
+            <div class="svt-quad-head">
+              <span class="svt-quad-num">QUADRANT I</span>
+              <span class="badge badge-success">OPTIMAL</span>
+            </div>
+            <div class="svt-quad-title">🟢 Good Wins</div>
+            <div class="svt-quad-metrics">
+              <div class="svt-quad-stat"><span class="lbl">Trades:</span> <b>${q.good_wins_count}</b> <span class="dim">(${gwPct}%)</span></div>
+              <div class="svt-quad-stat"><span class="lbl">Net R:</span> <b class="win">+${fmtNum(q.good_wins_net_r, 2)} R</b></div>
+              <div class="svt-quad-stat"><span class="lbl">Profit:</span> <b class="win">+${fmtNum(q.good_wins_profit)}</b></div>
+            </div>
+            <div class="svt-quad-desc">Flawless execution. Followed rules and captured edge. The foundation of compounding.</div>
+            <button class="btn btn-sm svt-filter-btn" onclick="filterTradesByQuadrant('COMPLIANT', 'WIN')">Filter Good Wins</button>
+          </div>
+
+          <!-- Quadrant II: Good Losses -->
+          <div class="svt-quadrant-card quadrant-good-loss">
+            <div class="svt-quad-head">
+              <span class="svt-quad-num">QUADRANT II</span>
+              <span class="badge badge-info">DISCIPLINED</span>
+            </div>
+            <div class="svt-quad-title">🔵 Good Losses</div>
+            <div class="svt-quad-metrics">
+              <div class="svt-quad-stat"><span class="lbl">Trades:</span> <b>${q.good_losses_count}</b> <span class="dim">(${glPct}%)</span></div>
+              <div class="svt-quad-stat"><span class="lbl">Net R:</span> <b>${fmtNum(q.good_losses_net_r, 2)} R</b></div>
+              <div class="svt-quad-stat"><span class="lbl">Loss:</span> <b>${fmtNum(q.good_losses_profit)}</b></div>
+            </div>
+            <div class="svt-quad-desc">Followed rules, but took a loss. Healthy variance and normal cost of doing business.</div>
+            <button class="btn btn-sm svt-filter-btn" onclick="filterTradesByQuadrant('COMPLIANT', 'LOSS')">Filter Good Losses</button>
+          </div>
+        </div>
+
+        <!-- Row 2: Rules Broken (Deviations) -->
+        <div class="svt-matrix-row">
+          <div class="svt-row-title svt-row-deviation">
+            <div class="svt-row-badge">RULES BROKEN</div>
+            <div class="svt-row-sub">Manual Deviations</div>
+          </div>
+
+          <!-- Quadrant III: Bad Wins -->
+          <div class="svt-quadrant-card quadrant-bad-win">
+            <div class="svt-quad-head">
+              <span class="svt-quad-num">QUADRANT III</span>
+              <span class="badge badge-warning">TOXIC HABIT</span>
+            </div>
+            <div class="svt-quad-title">🟡 Bad Wins</div>
+            <div class="svt-quad-metrics">
+              <div class="svt-quad-stat"><span class="lbl">Trades:</span> <b>${q.bad_wins_count}</b> <span class="dim">(${bwPct}%)</span></div>
+              <div class="svt-quad-stat"><span class="lbl">Net R:</span> <b class="win">+${fmtNum(q.bad_wins_net_r, 2)} R</b></div>
+              <div class="svt-quad-stat"><span class="lbl">Profit:</span> <b class="win">+${fmtNum(q.bad_wins_profit)}</b></div>
+            </div>
+            <div class="svt-quad-desc">Broke rules and won. Highly toxic reinforcement! Builds illusion of skill on bad habits.</div>
+            <button class="btn btn-sm svt-filter-btn" onclick="filterTradesByQuadrant('DEVIATION', 'WIN')">Filter Bad Wins</button>
+          </div>
+
+          <!-- Quadrant IV: Bad Losses -->
+          <div class="svt-quadrant-card quadrant-bad-loss">
+            <div class="svt-quad-head">
+              <span class="svt-quad-num">QUADRANT IV</span>
+              <span class="badge badge-danger">CAPITAL LEAK</span>
+            </div>
+            <div class="svt-quad-title">🔴 Bad Losses</div>
+            <div class="svt-quad-metrics">
+              <div class="svt-quad-stat"><span class="lbl">Trades:</span> <b>${q.bad_losses_count}</b> <span class="dim">(${blPct}%)</span></div>
+              <div class="svt-quad-stat"><span class="lbl">Net R:</span> <b class="loss">${fmtNum(q.bad_losses_net_r, 2)} R</b></div>
+              <div class="svt-quad-stat"><span class="lbl">Loss:</span> <b class="loss">${fmtNum(q.bad_losses_profit)}</b></div>
+            </div>
+            <div class="svt-quad-desc">Broke rules and lost. Pure unforced error. Eliminating this single quadrant restores capital.</div>
+            <button class="btn btn-sm svt-filter-btn" onclick="filterTradesByQuadrant('DEVIATION', 'LOSS')">Filter Bad Losses</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2D Discipline Scatter Plot Canvas -->
+    <div class="card" style="margin-top: 16px;">
+      <div class="card-header-row">
+        <div>
+          <div class="card-title">Discipline Scatter Distribution</div>
+          <div class="card-sub">Realized R vs Process Adherence (Hover for details, click to inspect trade)</div>
+        </div>
+        <div id="svt-scatter-tooltip" class="svt-tooltip"></div>
+      </div>
+      <canvas id="svt-scatter-canvas" class="svt-scatter-canvas"></canvas>
+      <div class="svt-scatter-footer">
+        <span>X-Axis: Realized R (Zero baseline at center)</span>
+        <span>Y-Axis: Top = Compliant · Bottom = Deviation / Partial</span>
+      </div>
+    </div>
+
+    <!-- Cohort Comparison Strip: Compliant vs Deviation vs Emotional -->
+    <div class="card" style="margin-top: 16px;">
+      <div class="card-title">Execution Cohort Deep-Dive</div>
+      <div class="card-sub" style="margin-bottom: 12px;">Contrasting strategy rules against manual overrides and emotional trades</div>
+      <div class="svt-cohort-grid">
+        ${renderCohortCard("Compliant (Strategy Edge)", c.compliant_performance, "cohort-compliant", "Rules followed 100%")}
+        ${renderCohortCard("Deviation (Discipline Leaks)", c.deviation_performance, "cohort-deviation", "Manual overrides & partial setups")}
+        ${renderCohortCard("Emotional (Psychology Drag)", c.emotional_performance, "cohort-emotional", "FOMO, Revenge, Fear or Greed tags")}
+      </div>
+    </div>
   `;
+
+  const canvas = document.getElementById("svt-scatter-canvas");
+  if (canvas) {
+    drawDisciplineScatter(canvas, state.trades);
+  }
 }
 
 function perfRow(label, m) {

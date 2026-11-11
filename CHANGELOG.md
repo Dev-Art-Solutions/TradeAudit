@@ -31,6 +31,12 @@
 - Key breakdown insights hero strip highlighting top instrument, optimal session, peak weekday, and post-loss revenge drag indicators.
 - Category navigation filter and visual win rate mini progress bars across breakdown tables.
 - Unit and browser E2E test coverage for `/api/breakdown` multi-dimensional calculations and interactive views.
+- Interactive Four-Quadrant Execution Matrix in "Strategy vs Trader" contrasting Process Adherence (Rules Followed vs Broken) against Market Outcome (Profit vs Loss) with Good Wins, Good Losses, Bad Wins, and Bad Losses cards.
+- Interactive 2D Discipline Scatter Plot canvas displaying trades in the Realized R vs Process Adherence plane with quadrant zones, zero baseline crosshairs, and hover tooltips.
+- Hero discipline strip with adherence score progress bar, deviation capital leak quantification (in R and monetary), bad losses drag, and quality diagnosis verdicts.
+- Execution cohort deep-dive comparison cards contrasting Compliant (Strategy Edge), Deviation (Discipline Leaks), and Emotional (Psychological Drag) trades.
+- 1-click quadrant filter navigation enabling instant drill-down from matrix cells to filtered trades in the ledger.
+- Unit and Playwright browser E2E test coverage for `/api/strategy-vs-trader` endpoint metrics, matrix rendering, and drill-down interactions.
 
 ## 1.1.1 — 2026-10-27
 

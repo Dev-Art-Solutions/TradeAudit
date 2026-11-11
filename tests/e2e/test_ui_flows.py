@@ -359,3 +359,33 @@ def test_breakdowns_view_dimensions_and_hourly_chart(page, live_server, seeded_t
     page.click('[data-bd-cat="sequence"]')
     page.wait_for_selector(".cat-sequence", timeout=5000)
     assert page.is_visible("text=Contextual Trade Sequence")
+
+
+def test_strategy_vs_trader_matrix_and_scatter_canvas(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#strategy-vs-trader")
+    page.wait_for_selector(".svt-matrix-container", timeout=15000)
+
+    # Hero strip and diagnostics
+    assert page.is_visible(".svt-hero-strip")
+    assert page.is_visible(".svt-verdict-card")
+
+    # Four-quadrant matrix cards
+    assert page.locator(".svt-quadrant-card").count() == 4
+    assert page.is_visible("text=Four-Quadrant Execution Matrix")
+    assert page.is_visible("text=Good Wins")
+    assert page.is_visible("text=Good Losses")
+    assert page.is_visible("text=Bad Wins")
+    assert page.is_visible("text=Bad Losses")
+
+    # 2D discipline scatter plot canvas
+    assert page.is_visible("#svt-scatter-canvas")
+    assert page.is_visible("text=Discipline Scatter Distribution")
+
+    # Cohort deep-dive
+    assert page.is_visible(".svt-cohort-grid")
+    assert page.is_visible("text=Execution Cohort Deep-Dive")
+
+    # 1-click quadrant filter navigation to trades
+    page.click(".quadrant-good-win .svt-filter-btn")
+    page.wait_for_timeout(300)
+    assert page.text_content("#page-title") == "Trades"

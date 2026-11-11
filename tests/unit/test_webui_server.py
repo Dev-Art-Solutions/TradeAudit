@@ -536,3 +536,59 @@ def test_breakdown_endpoint_returns_all_eight_dimensions_with_seeded_trades(clie
     assert "CALM" in b["by_emotion"]
     assert "POST_WIN" in b["by_context"]
     assert "STREAK_0" in b["by_streak"]
+
+
+def test_strategy_vs_trader_endpoint_with_seeded_trades(client, existing_trade_id):
+    from datetime import datetime, timezone
+    from tradeaudit.infrastructure.database.models import TradeModel
+    from tradeaudit.domain.models import Trade
+    ctx = client.app.state.tradeaudit_context
+
+    # Update existing trade as Good Win (Compliant + Win)
+    account_id = 1
+    with ctx.db_manager.session_scope() as session:
+        t1 = session.query(TradeModel).filter(TradeModel.id == existing_trade_id).first()
+        account_id = t1.account_id
+        t1.status = "CLOSED"
+        t1.profit = 150.0
+        t1.realized_r = 1.5
+        t1.compliance_status = "COMPLIANT"
+        t1.emotion_tag = "CALM"
+        session.commit()
+
+    # Add second trade as Bad Loss (Deviation + Loss) under same account
+    t2 = Trade(
+        account_id=account_id,
+        position_id=999,
+        symbol="GBPUSD",
+        direction="SELL",
+        status="CLOSED",
+        open_time=datetime(2026, 1, 1, 14, 0, tzinfo=timezone.utc),
+        close_time=datetime(2026, 1, 1, 15, 0, tzinfo=timezone.utc),
+        profit=-100.0,
+        realized_r=-1.0,
+        compliance_status="DEVIATION",
+        emotion_tag="REVENGE"
+    )
+    ctx.trade_repo.save_trades(account_id, [t2])
+
+    res = client.get("/api/strategy-vs-trader")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["total_performance"]["total_trades"] == 2
+    assert "four_quadrants" in data
+    q = data["four_quadrants"]
+    assert q["good_wins_count"] == 1
+    assert q["good_wins_net_r"] == 1.5
+    assert q["bad_losses_count"] == 1
+    assert q["bad_losses_net_r"] == -1.0
+
+    assert data["compliant_performance"]["total_trades"] == 1
+    assert data["deviation_performance"]["total_trades"] == 1
+    assert data["emotional_performance"]["total_trades"] == 1
+    assert "quality_verdict" in data
+    assert data["quality_verdict"] in (
+        "HIGH_DISCIPLINE", "EXECUTION_BREAKDOWN", "FLAWED_STRATEGY_LUCKY_DEVIATIONS",
+        "FLAWED_STRATEGY_AND_EXECUTION", "BALANCED", "ALL_TRADES_DEVIATIONS"
+    )
