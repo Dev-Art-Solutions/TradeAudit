@@ -622,17 +622,18 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
 
     @app.get("/api/live-journal/positions")
     def live_positions():
+        events = ctx.trade_event_repo.get_all_events(limit=100)
+        events_json = [to_jsonable(e) for e in events]
         account_id = ctx.current_login()
         if not account_id:
-            return {"status": "Configure MT5 settings first", "positions": [], "events": []}
+            return {"status": "Configure MT5 settings first", "positions": [], "events": events_json}
         if not ctx.mt5_service.is_connected():
-            return {"status": "MT5 Disconnected", "positions": [], "events": []}
+            return {"status": "MT5 Disconnected", "positions": [], "events": events_json}
         positions = ctx.live_watcher_service.poll_positions(account_id)
-        events = ctx.trade_event_repo.get_all_events(limit=100)
         return {
             "status": f"Active ({len(positions)} open position(s))",
             "positions": [to_jsonable(p) for p in positions],
-            "events": [to_jsonable(e) for e in events],
+            "events": events_json,
         }
 
     # ------------------------------------------------------------ trade chart

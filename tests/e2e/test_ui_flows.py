@@ -389,3 +389,32 @@ def test_strategy_vs_trader_matrix_and_scatter_canvas(page, live_server, seeded_
     page.click(".quadrant-good-win .svt-filter-btn")
     page.wait_for_timeout(300)
     assert page.text_content("#page-title") == "Trades"
+
+
+def test_live_journal_view_rendering_and_polling_controls(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#live-journal")
+    page.wait_for_selector("#lj-hero-strip", timeout=15000)
+
+    # Hero KPI strip
+    assert page.is_visible("#lj-hero-strip")
+    assert page.is_visible("#lj-kpi-count")
+    assert page.is_visible("#lj-kpi-profit")
+    assert page.is_visible("#lj-kpi-volume")
+    assert page.is_visible("#lj-kpi-protection")
+
+    # Polling & auto-refresh toolbar
+    assert page.is_visible("#btn-poll")
+    assert page.is_visible("#lj-interval-select")
+    assert page.is_visible("#lj-status")
+
+    # Positions and events sections
+    assert page.is_visible("#lj-positions-card")
+    assert page.is_visible("#lj-events-section")
+    assert page.is_visible("#lj-filter-all")
+    assert page.is_visible("#lj-filter-sl")
+    assert page.is_visible("#lj-filter-orders")
+
+    # Trigger poll
+    page.click("#btn-poll")
+    page.wait_for_timeout(300)
+    assert page.is_visible("#lj-last-poll")

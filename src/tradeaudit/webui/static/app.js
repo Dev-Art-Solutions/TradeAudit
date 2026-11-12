@@ -2013,38 +2013,353 @@ async function viewBreakdowns() {
 
 // ------------------------------------------------------------------ live journal
 
+let ljCurrentPositions = [];
+let ljCurrentEvents = [];
+let ljEventFilter = "ALL";
+
 async function viewLiveJournal() {
   content().innerHTML = `
-    <div class="toolbar"><div id="lj-status" class="chip">Idle</div>
-      <div class="right"><button class="btn btn-primary" id="btn-poll">\u{1F504} Poll Positions</button></div>
+    <!-- Top Toolbar: Polling & Auto-Refresh Controls -->
+    <div class="toolbar" style="margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <div id="lj-status" class="chip">Idle</div>
+        <div id="lj-last-poll" class="text-dim" style="font-size: 11.5px;">Last updated: —</div>
+      </div>
+      <div class="right" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <label for="lj-interval-select" class="text-dim" style="font-size: 12px; margin: 0;">Auto-Refresh:</label>
+        <select id="lj-interval-select" class="filter-select" style="min-width: 140px;">
+          <option value="0">Off (Manual)</option>
+          <option value="5000">Every 5 sec</option>
+          <option value="10000">Every 10 sec</option>
+          <option value="30000">Every 30 sec</option>
+        </select>
+        <button class="btn btn-primary" id="btn-poll">🔄 Poll Positions</button>
+      </div>
     </div>
-    <div id="lj-body"></div>
+
+    <!-- Real-Time Portfolio & Exposure Hero Strip -->
+    <div class="lj-hero-strip" id="lj-hero-strip">
+      <div class="lj-hero-card">
+        <div class="kpi-label">Open Positions</div>
+        <div class="lj-kpi-val" id="lj-kpi-count">0</div>
+        <div class="kpi-sub" id="lj-kpi-symbols">0 instruments active</div>
+      </div>
+      <div class="lj-hero-card">
+        <div class="kpi-label">Floating P/L</div>
+        <div class="lj-kpi-val" id="lj-kpi-profit">$0.00</div>
+        <div class="kpi-sub" id="lj-kpi-swap">Financing: $0.00</div>
+      </div>
+      <div class="lj-hero-card">
+        <div class="kpi-label">Exposure Volume</div>
+        <div class="lj-kpi-val" id="lj-kpi-volume">0.00 Lots</div>
+        <div class="kpi-sub" id="lj-kpi-exposure">0.00 L · 0.00 S</div>
+      </div>
+      <div class="lj-hero-card">
+        <div class="kpi-label">Risk Protection</div>
+        <div class="lj-kpi-val" id="lj-kpi-protection">Standby</div>
+        <div class="kpi-sub" id="lj-kpi-protection-sub">No open exposure</div>
+      </div>
+    </div>
+
+    <!-- Active Open Positions Card -->
+    <div class="card" id="lj-positions-card" style="margin-top: 16px;">
+      <div class="card-header-row">
+        <div>
+          <div class="card-title">Live MT5 Positions</div>
+          <div class="card-sub">Real-time open orders with live pricing and Stop-Loss safety monitoring</div>
+        </div>
+      </div>
+      <div id="lj-positions-body" style="margin-top: 10px;">Loading positions…</div>
+    </div>
+
+    <!-- Lifecycle Audit Event Ledger & Behavioral Alerts -->
+    <div class="card" id="lj-events-section" style="margin-top: 16px;">
+      <div class="card-header-row">
+        <div>
+          <div class="card-title">Live Lifecycle Events & Behavioral Ledger</div>
+          <div class="card-sub">Audit trail of Stop-Loss adjustments, order execution, and widening risk alerts</div>
+        </div>
+        <div class="lj-event-filters">
+          <button class="btn btn-sm lj-tab-btn active" data-filter="ALL" id="lj-filter-all">All Events</button>
+          <button class="btn btn-sm lj-tab-btn" data-filter="SL" id="lj-filter-sl">SL Modifications</button>
+          <button class="btn btn-sm lj-tab-btn" data-filter="ORDERS" id="lj-filter-orders">Open / Close</button>
+        </div>
+      </div>
+      <div id="lj-events-body" style="margin-top: 10px;">Loading events…</div>
+    </div>
   `;
-  document.getElementById("btn-poll").addEventListener("click", pollLiveJournal);
-  await pollLiveJournal();
+
+  document.getElementById("btn-poll").addEventListener("click", () => pollLiveJournal(true));
+
+  const intervalSelect = document.getElementById("lj-interval-select");
+  if (state.liveJournalInterval) {
+    intervalSelect.value = state.liveJournalInterval;
+  }
+  intervalSelect.addEventListener("change", (e) => {
+    state.liveJournalInterval = e.target.value;
+    setupLiveJournalTimer();
+  });
+
+  const filterBtns = content().querySelectorAll(".lj-tab-btn");
+  filterBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      filterBtns.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      ljEventFilter = btn.dataset.filter;
+      renderLiveJournalEvents();
+    });
+  });
+
+  setupLiveJournalTimer();
+  await pollLiveJournal(false);
 }
 
-async function pollLiveJournal() {
-  let data;
-  try { data = await apiGet("/live-journal/positions"); } catch (e) {
-    document.getElementById("lj-body").innerHTML = emptyState("\u26A0\uFE0F", "Could not load", e.message); return;
+function setupLiveJournalTimer() {
+  if (state.liveJournalTimer) {
+    clearInterval(state.liveJournalTimer);
+    state.liveJournalTimer = null;
   }
-  document.getElementById("lj-status").textContent = data.status;
-  const body = document.getElementById("lj-body");
-  if (!data.positions.length) {
-    body.innerHTML = emptyState("\u{1F4DD}", "No open positions", "Connect MT5 and poll to see live positions here.");
+  const ms = parseInt(state.liveJournalInterval || "0", 10);
+  if (ms > 0) {
+    state.liveJournalTimer = setInterval(() => {
+      if (state.route === "live-journal") {
+        pollLiveJournal(false);
+      } else {
+        clearInterval(state.liveJournalTimer);
+        state.liveJournalTimer = null;
+      }
+    }, ms);
+  }
+}
+
+async function pollLiveJournal(isManual) {
+  const statusEl = document.getElementById("lj-status");
+  const lastPollEl = document.getElementById("lj-last-poll");
+  if (statusEl && isManual) {
+    statusEl.textContent = "Polling MT5…";
+  }
+
+  let data;
+  try {
+    data = await apiGet("/live-journal/positions");
+  } catch (e) {
+    const posBody = document.getElementById("lj-positions-body");
+    if (posBody) posBody.innerHTML = emptyState("⚠️", "Could not load", e.message);
+    if (statusEl) statusEl.textContent = "Error";
     return;
   }
-  const rows = data.positions.map((p) => `
-    <tr>
-      <td>${esc(p.symbol)}</td><td><span class="pill ${p.type === "BUY" ? "buy" : "sell"}">${p.type}</span></td>
-      <td class="mono">${fmtVolume(p.volume)}</td><td class="mono">${fmtNum(p.price_open, 5)}</td>
-      <td class="mono">${fmtNum(p.sl, 5)}</td><td class="mono">${fmtNum(p.tp, 5)}</td>
-      <td class="mono ${signClass(p.profit)}">${fmtNum(p.profit)}</td>
-    </tr>`).join("");
-  body.innerHTML = `<div class="table-wrap"><table><thead><tr>
-    <th>Symbol</th><th>Dir</th><th>Volume</th><th>Open Px</th><th>SL</th><th>TP</th><th>P/L</th>
-  </tr></thead><tbody>${rows}</tbody></table></div>`;
+
+  const now = new Date();
+  const timeStr = now.toTimeString().split(" ")[0];
+  if (lastPollEl) lastPollEl.textContent = `Last updated: ${timeStr}`;
+
+  ljCurrentPositions = data.positions || [];
+  ljCurrentEvents = data.events || [];
+
+  if (statusEl) {
+    if (ljCurrentPositions.length > 0) {
+      statusEl.innerHTML = `<span class="lj-beacon"></span> Active (${ljCurrentPositions.length} position${ljCurrentPositions.length > 1 ? "s" : ""})`;
+    } else {
+      statusEl.textContent = data.status || "Idle";
+    }
+  }
+
+  renderLiveJournalHero();
+  renderLiveJournalPositions();
+  renderLiveJournalEvents();
+}
+
+function renderLiveJournalHero() {
+  const countEl = document.getElementById("lj-kpi-count");
+  const symbolsEl = document.getElementById("lj-kpi-symbols");
+  const profitEl = document.getElementById("lj-kpi-profit");
+  const swapEl = document.getElementById("lj-kpi-swap");
+  const volumeEl = document.getElementById("lj-kpi-volume");
+  const exposureEl = document.getElementById("lj-kpi-exposure");
+  const protEl = document.getElementById("lj-kpi-protection");
+  const protSubEl = document.getElementById("lj-kpi-protection-sub");
+
+  if (!countEl) return;
+
+  const positions = ljCurrentPositions;
+  countEl.textContent = positions.length;
+
+  const symbols = [...new Set(positions.map((p) => p.symbol).filter(Boolean))];
+  symbolsEl.textContent = `${symbols.length} instrument${symbols.length === 1 ? "" : "s"} active`;
+
+  const netProfit = positions.reduce((acc, p) => acc + (p.profit || 0), 0);
+  const totalSwap = positions.reduce((acc, p) => acc + (p.swap || 0), 0);
+  profitEl.textContent = `${netProfit >= 0 ? "+" : ""}$${fmtNum(netProfit)}`;
+  profitEl.className = `lj-kpi-val ${netProfit >= 0 ? "win" : "loss"}`;
+  swapEl.textContent = `Swap/Financing: $${fmtNum(totalSwap)}`;
+
+  const totalVol = positions.reduce((acc, p) => acc + (p.volume || 0), 0);
+  const longVol = positions.filter((p) => p.type === "BUY").reduce((acc, p) => acc + (p.volume || 0), 0);
+  const shortVol = positions.filter((p) => p.type === "SELL").reduce((acc, p) => acc + (p.volume || 0), 0);
+  volumeEl.textContent = `${fmtVolume(totalVol)} Lots`;
+  exposureEl.textContent = `${longVol.toFixed(2)} Long · ${shortVol.toFixed(2)} Short`;
+
+  const unprotected = positions.filter((p) => !p.sl || p.sl <= 0);
+  if (positions.length === 0) {
+    protEl.textContent = "Standby";
+    protEl.className = "lj-kpi-val";
+    protSubEl.textContent = "No open exposure";
+  } else if (unprotected.length > 0) {
+    protEl.innerHTML = `<span class="loss">⚠️ ${unprotected.length} Unprotected</span>`;
+    protEl.className = "lj-kpi-val loss";
+    protSubEl.textContent = "Missing Stop-Loss! High risk.";
+  } else {
+    protEl.innerHTML = `<span class="win">🛡️ 100% Protected</span>`;
+    protEl.className = "lj-kpi-val win";
+    protSubEl.textContent = "All positions have hard SL";
+  }
+}
+
+function renderLiveJournalPositions() {
+  const body = document.getElementById("lj-positions-body");
+  if (!body) return;
+
+  if (!ljCurrentPositions.length) {
+    body.innerHTML = `
+      <div class="empty-state" style="padding: 24px 16px;">
+        <div class="empty-state-icon">🛡️</div>
+        <div class="empty-state-title">No Active Open Positions</div>
+        <div class="empty-state-sub">Account is currently flat. Open trades on MT5 will appear here automatically upon polling.</div>
+      </div>`;
+    return;
+  }
+
+  const rows = ljCurrentPositions.map((p) => {
+    const isBuy = p.type === "BUY";
+    const openPx = p.price_open || 0;
+    const sl = p.sl || 0;
+    const tp = p.tp || 0;
+
+    let slHtml = `<span class="badge badge-danger">⚠️ NO SL</span>`;
+    if (sl > 0) {
+      slHtml = `<span class="badge badge-success">🛡️ ${fmtNum(sl, 5)}</span>`;
+    }
+
+    let tpHtml = `<span class="text-dim">—</span>`;
+    if (tp > 0) {
+      tpHtml = `<span class="badge badge-info">🎯 ${fmtNum(tp, 5)}</span>`;
+    }
+
+    const timeFormatted = p.time ? fmtTime(p.time) : "—";
+
+    return `
+      <tr>
+        <td><b>${esc(p.symbol)}</b> <span class="text-dim">#${p.ticket || p.position_id}</span></td>
+        <td><span class="pill ${isBuy ? "buy" : "sell"}">${p.type}</span></td>
+        <td class="mono font-bold">${fmtVolume(p.volume)}</td>
+        <td class="mono">${fmtNum(openPx, 5)}</td>
+        <td>${slHtml}</td>
+        <td>${tpHtml}</td>
+        <td class="mono ${signClass(p.profit)} font-bold">${fmtNum(p.profit)}</td>
+        <td class="mono text-dim">${fmtNum(p.swap || 0)}</td>
+        <td class="text-dim" style="font-size: 11px;">${timeFormatted}</td>
+      </tr>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Instrument</th>
+            <th>Type</th>
+            <th>Volume</th>
+            <th>Open Price</th>
+            <th>Stop-Loss</th>
+            <th>Take-Profit</th>
+            <th>Floating P/L</th>
+            <th>Swap</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderLiveJournalEvents() {
+  const body = document.getElementById("lj-events-body");
+  if (!body) return;
+
+  let events = ljCurrentEvents || [];
+  if (ljEventFilter === "SL") {
+    events = events.filter((e) => e.event_type === "SL_MODIFIED");
+  } else if (ljEventFilter === "ORDERS") {
+    events = events.filter((e) => e.event_type === "POSITION_OPENED" || e.event_type === "POSITION_CLOSED");
+  }
+
+  if (!events.length) {
+    body.innerHTML = `
+      <div class="empty-state" style="padding: 24px 16px;">
+        <div class="empty-state-icon">📋</div>
+        <div class="empty-state-title">No Lifecycle Events Recorded</div>
+        <div class="empty-state-sub">Modifications to Stop-Loss, Take-Profit, or position volume will log here in real time.</div>
+      </div>`;
+    return;
+  }
+
+  const items = events.map((e) => {
+    const d = e.details || {};
+    const t = e.timestamp ? fmtTime(e.timestamp) : "—";
+    const posId = e.position_id ? `#${e.position_id}` : "";
+
+    let badgeClass = "badge-neutral";
+    let badgeText = e.event_type;
+    let desc = "";
+    let isRedFlag = false;
+
+    if (e.event_type === "SL_MODIFIED") {
+      if (d.reason === "SL_MOVED_AWAY") {
+        badgeClass = "badge-danger";
+        badgeText = "🚨 SL MOVED AWAY";
+        isRedFlag = true;
+        desc = `<b>RED FLAG: Stop-Loss widened away from entry!</b> (${fmtNum(d.old_sl, 5)} → ${fmtNum(d.new_sl, 5)}). Behavioral risk violation.`;
+      } else if (d.reason === "SL_SET") {
+        badgeClass = "badge-success";
+        badgeText = "🛡️ SL SET";
+        desc = `Initial Stop-Loss set to <b>${fmtNum(d.new_sl, 5)}</b>.`;
+      } else {
+        badgeClass = "badge-warning";
+        badgeText = "🔄 SL MODIFIED";
+        desc = `Stop-Loss adjusted: ${fmtNum(d.old_sl, 5)} → <b>${fmtNum(d.new_sl, 5)}</b>.`;
+      }
+    } else if (e.event_type === "TP_MODIFIED") {
+      badgeClass = "badge-info";
+      badgeText = "🎯 TP MODIFIED";
+      desc = `Take-Profit adjusted: ${fmtNum(d.old_tp, 5)} → <b>${fmtNum(d.new_tp, 5)}</b>.`;
+    } else if (e.event_type === "POSITION_OPENED") {
+      badgeClass = "badge-success";
+      badgeText = "🟢 OPENED";
+      desc = `Opened <b>${esc(d.symbol || "")}</b> ${esc(d.type || "")} ${fmtVolume(d.volume || 0)} lots at ${fmtNum(d.price_open, 5)}.`;
+    } else if (e.event_type === "POSITION_CLOSED") {
+      badgeClass = "badge-neutral";
+      badgeText = "🏁 CLOSED";
+      desc = `Position closed.`;
+    } else if (e.event_type === "VOLUME_CHANGED" || e.event_type === "PARTIAL_CLOSE") {
+      badgeClass = "badge-warning";
+      badgeText = "✂️ PARTIAL CLOSE";
+      desc = `Volume modified: ${fmtVolume(d.old_volume || 0)} → ${fmtVolume(d.new_volume || 0)} lots.`;
+    } else {
+      desc = JSON.stringify(d);
+    }
+
+    return `
+      <div class="lj-event-item ${isRedFlag ? "lj-event-flag-red" : ""}">
+        <div style="min-width: 140px;">
+          <span class="badge ${badgeClass}">${badgeText}</span>
+        </div>
+        <div class="mono text-dim" style="font-size: 11.5px; min-width: 70px;">${posId}</div>
+        <div style="flex: 1; font-size: 12.5px;">${desc}</div>
+        <div class="text-dim mono" style="font-size: 11px; white-space: nowrap;">${t}</div>
+      </div>`;
+  }).join("");
+
+  body.innerHTML = `<div class="lj-events-list">${items}</div>`;
 }
 
 // ------------------------------------------------------------------ reports
@@ -3968,6 +4283,10 @@ async function renderRoute() {
 }
 
 function syncFromHash() {
+  if (state.liveJournalTimer) {
+    clearInterval(state.liveJournalTimer);
+    state.liveJournalTimer = null;
+  }
   const requested = (location.hash || "#dashboard").slice(1);
   const route = NAV.some((n) => n.id === requested) ? requested : "dashboard";
   state.route = route;

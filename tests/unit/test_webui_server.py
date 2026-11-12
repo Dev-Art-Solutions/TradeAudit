@@ -592,3 +592,27 @@ def test_strategy_vs_trader_endpoint_with_seeded_trades(client, existing_trade_i
         "HIGH_DISCIPLINE", "EXECUTION_BREAKDOWN", "FLAWED_STRATEGY_LUCKY_DEVIATIONS",
         "FLAWED_STRATEGY_AND_EXECUTION", "BALANCED", "ALL_TRADES_DEVIATIONS"
     )
+
+
+def test_live_journal_endpoint_returns_events_when_present(client):
+    from datetime import datetime, timezone
+    from tradeaudit.domain.models import TradeEventRecord, TradeEventType
+
+    ctx = client.app.state.tradeaudit_context
+    rec = TradeEventRecord(
+        position_id=5005,
+        event_type=TradeEventType.SL_MODIFIED.value,
+        timestamp=datetime.now(timezone.utc),
+        details={"old_sl": 1.0850, "new_sl": 1.0800, "reason": "SL_MOVED_AWAY"}
+    )
+    ctx.trade_event_repo.save_trade_event(rec)
+
+    res = client.get("/api/live-journal/positions")
+    assert res.status_code == 200
+    data = res.json()
+    assert "positions" in data
+    assert "events" in data
+    assert any(e["position_id"] == 5005 for e in data["events"])
+    ev = next(e for e in data["events"] if e["position_id"] == 5005)
+    assert ev["event_type"] == "SL_MODIFIED"
+    assert ev["details"]["reason"] == "SL_MOVED_AWAY"

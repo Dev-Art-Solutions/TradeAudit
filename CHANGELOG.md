@@ -37,6 +37,12 @@
 - Execution cohort deep-dive comparison cards contrasting Compliant (Strategy Edge), Deviation (Discipline Leaks), and Emotional (Psychological Drag) trades.
 - 1-click quadrant filter navigation enabling instant drill-down from matrix cells to filtered trades in the ledger.
 - Unit and Playwright browser E2E test coverage for `/api/strategy-vs-trader` endpoint metrics, matrix rendering, and drill-down interactions.
+- Real-time Portfolio & Exposure hero strip in Live Journal tracking open position count, net floating P/L, lot exposure (long vs short), and Stop-Loss safety alerts.
+- Live position monitoring table with dynamic SL protection badges, pip distance metrics, take-profit levels, and financing fees.
+- Configurable auto-refresh interval selector (Manual, 5s, 10s, 30s) with active polling timer lifecycle management and pulsing beacon indicator.
+- Live lifecycle audit event ledger and behavioral alerts tracking trailing Stop-Loss moves, partial closes, and red-flag SL-widening violations.
+- Server-side persistence and delivery of recent trade lifecycle events even during disconnected terminal sessions.
+- Unit and Playwright browser E2E test coverage for `/api/live-journal/positions` endpoints, hero metrics, and polling controls.
 
 ## 1.1.1 — 2026-10-27
 
