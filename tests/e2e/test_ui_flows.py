@@ -418,3 +418,33 @@ def test_live_journal_view_rendering_and_polling_controls(page, live_server, see
     page.click("#btn-poll")
     page.wait_for_timeout(300)
     assert page.is_visible("#lj-last-poll")
+
+
+def test_strategies_view_presets_and_creation(page, live_server):
+    page.goto(live_server["base_url"] + "/#strategies")
+    page.wait_for_selector("#strat-hero-strip", timeout=15000)
+
+    # Hero strip
+    assert page.is_visible("#strat-hero-strip")
+    assert page.is_visible("#strategy-list")
+    assert page.is_visible("#s-name")
+    assert page.is_visible("#s-symbols")
+    assert page.is_visible("#s-session-london")
+
+    # Select preset from dropdown
+    page.select_option("#strat-preset-select", "trend")
+    page.wait_for_timeout(300)
+
+    assert "Trend Following" in page.input_value("#s-name")
+    assert page.input_value("#s-minrr") == "2.5"
+    assert "EURUSD" in page.input_value("#s-symbols")
+    assert page.is_checked("#s-session-london")
+
+    # Save the preset strategy
+    page.click("#btn-save-strategy")
+    page.wait_for_selector(".strat-card", timeout=10000)
+
+    assert page.is_visible("text=Trend Following")
+    assert page.is_visible("text=Min R:R")
+    assert page.is_visible("text=2.5:1")
+    assert page.is_visible("text=LONDON")

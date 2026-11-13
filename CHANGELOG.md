@@ -43,6 +43,11 @@
 - Live lifecycle audit event ledger and behavioral alerts tracking trailing Stop-Loss moves, partial closes, and red-flag SL-widening violations.
 - Server-side persistence and delivery of recent trade lifecycle events even during disconnected terminal sessions.
 - Unit and Playwright browser E2E test coverage for `/api/live-journal/positions` endpoints, hero metrics, and polling controls.
+- Strategy portfolio summary hero strip in Strategies view showing active strategy count, overall compliance discipline rate %, total realized profit, and total net R.
+- Interactive strategy rule preset quick-loader with 4 preconfigured rule sets: Trend Following, Day Trading Reversal, Scalp Momentum, and Prop Firm Strict Rules.
+- Allowed trading sessions multi-select checklist (Asia, London, New York) and comma-separated allowed symbols input in strategy rule configuration.
+- Real-time strategy performance metrics cards on each strategy detailing trade volume, win rate %, realized profit, net R, and adherence rate with 1-click drill-down filtering to the trade ledger.
+- Unit and Playwright browser E2E test coverage for strategy rule presets, session/symbol persistence, and UI strategy creation flows.
 
 ## 1.1.1 — 2026-10-27
 

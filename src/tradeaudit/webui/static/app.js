@@ -1063,70 +1063,398 @@ async function viewSettings() {
 
 // ------------------------------------------------------------------ strategies
 
+const STRATEGY_PRESETS = {
+  trend: {
+    name: "Trend Following (London / NY)",
+    desc: "Momentum continuation with strict 2.5:1 R:R target and 1% risk limit.",
+    min_rr: 2.5,
+    max_risk_pct: 1.0,
+    max_trades_per_day: 3,
+    allowed_direction: "ALL",
+    requires_sl: true,
+    requires_tp: false,
+    allowed_symbols: ["EURUSD", "GBPUSD", "USDJPY"],
+    allowed_sessions: ["LONDON", "NEW_YORK"],
+  },
+  reversal: {
+    name: "Day Trading Reversal",
+    desc: "Mean reversion at key support/resistance with mandatory hard SL and TP.",
+    min_rr: 1.5,
+    max_risk_pct: 1.5,
+    max_trades_per_day: 4,
+    allowed_direction: "ALL",
+    requires_sl: true,
+    requires_tp: true,
+    allowed_symbols: [],
+    allowed_sessions: ["LONDON", "NEW_YORK"],
+  },
+  scalp: {
+    name: "Scalp Momentum",
+    desc: "High-frequency rapid intraday scalp with tight risk management.",
+    min_rr: 1.2,
+    max_risk_pct: 0.5,
+    max_trades_per_day: 8,
+    allowed_direction: "ALL",
+    requires_sl: true,
+    requires_tp: false,
+    allowed_symbols: ["EURUSD", "XAUUSD"],
+    allowed_sessions: ["LONDON", "NEW_YORK"],
+  },
+  prop: {
+    name: "Prop Firm Conservative",
+    desc: "Strict drawdown preservation rules tailored for evaluation challenges.",
+    min_rr: 2.0,
+    max_risk_pct: 0.75,
+    max_trades_per_day: 2,
+    allowed_direction: "ALL",
+    requires_sl: true,
+    requires_tp: true,
+    allowed_symbols: [],
+    allowed_sessions: ["LONDON", "NEW_YORK"],
+  },
+};
+
+let stratSearchQuery = "";
+
 async function viewStrategies() {
-  try { state.strategies = await apiGet("/strategies"); } catch (e) { state.strategies = []; }
+  await Promise.all([loadStrategies(), loadTrades()]);
+
   content().innerHTML = `
+    <!-- Top Strategy Portfolio Hero Strip -->
+    <div class="strat-hero-strip" id="strat-hero-strip" style="margin-bottom: 16px;"></div>
+
     <div class="two-col">
       <div class="card">
-        <div class="card-title">Strategies</div>
-        <div id="strategy-list"></div>
-      </div>
-      <div class="card">
-        <div class="card-title" id="form-title">New Strategy</div>
-        <div class="field"><label>Name</label><input type="text" id="s-name" /></div>
-        <div class="field"><label>Description</label><textarea id="s-desc" rows="2"></textarea></div>
-        <div class="grid grid-2">
-          <div class="field"><label>Min R:R</label><input type="text" id="s-minrr" /></div>
-          <div class="field"><label>Max Risk %</label><input type="text" id="s-maxrisk" /></div>
+        <div class="card-header-row">
+          <div>
+            <div class="card-title">Defined Strategies</div>
+            <div class="card-sub" id="strat-list-sub">Managing execution rules and tracking real-world performance</div>
+          </div>
+          <input type="text" id="strat-search" class="filter-input" placeholder="Search rules..." style="max-width: 170px; font-size: 11.5px; padding: 5px 8px;" />
         </div>
-        <div class="grid grid-2">
-          <div class="field"><label>Max Trades / Day</label><input type="text" id="s-maxtrades" /></div>
-          <div class="field"><label>Allowed Direction</label>
-            <select id="s-direction"><option value="ALL">ALL</option><option value="BUY">BUY</option><option value="SELL">SELL</option></select>
+        <div id="strategy-list" style="margin-top: 12px;"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header-row">
+          <div>
+            <div class="card-title" id="form-title">New Strategy</div>
+            <div class="card-sub">Define risk boundaries and compliance checkpoints</div>
+          </div>
+          <div class="strat-preset-wrap">
+            <select id="strat-preset-select" class="filter-select" style="font-size: 11.5px; padding: 4px 8px;">
+              <option value="">⚡ Load Preset Rule Set...</option>
+              <option value="trend">Trend Following (2.5:1 R:R, 1% Risk)</option>
+              <option value="reversal">Day Trading Reversal (1.5:1, Strict SL/TP)</option>
+              <option value="scalp">Scalp Momentum (Tight 0.5% Risk)</option>
+              <option value="prop">Prop Firm Evaluation (Drawdown Shield)</option>
+            </select>
           </div>
         </div>
-        <div class="checkbox-row" style="margin-bottom:10px"><input type="checkbox" id="s-reqsl" /><label>Requires Stop Loss</label></div>
-        <div class="checkbox-row" style="margin-bottom:16px"><input type="checkbox" id="s-reqtp" /><label>Requires Take Profit</label></div>
+
+        <div class="field" style="margin-top: 10px;"><label>Strategy Name</label><input type="text" id="s-name" placeholder="e.g. London Breakout" /></div>
+        <div class="field"><label>Description / Setup Criteria</label><textarea id="s-desc" rows="2" placeholder="Key entry triggers, invalidation rules, context..."></textarea></div>
+
+        <div class="grid grid-2">
+          <div class="field"><label>Min Planned R:R</label><input type="text" id="s-minrr" placeholder="e.g. 2.0" /></div>
+          <div class="field"><label>Max Risk % per Trade</label><input type="text" id="s-maxrisk" placeholder="e.g. 1.0" /></div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="field"><label>Max Trades / Day</label><input type="text" id="s-maxtrades" placeholder="e.g. 3" /></div>
+          <div class="field"><label>Allowed Direction</label>
+            <select id="s-direction">
+              <option value="ALL">ALL (Long & Short)</option>
+              <option value="BUY">BUY Only (Longs)</option>
+              <option value="SELL">SELL Only (Shorts)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Allowed Instruments (Comma-separated, blank = all)</label>
+          <input type="text" id="s-symbols" placeholder="e.g. EURUSD, GBPUSD, XAUUSD" />
+        </div>
+
+        <div class="field">
+          <label>Allowed Trading Sessions</label>
+          <div style="display: flex; gap: 14px; margin-top: 4px; flex-wrap: wrap;">
+            <label class="checkbox-row" style="font-size: 12px; cursor: pointer;">
+              <input type="checkbox" id="s-session-asia" /> Asia (00:00 - 08:00 UTC)
+            </label>
+            <label class="checkbox-row" style="font-size: 12px; cursor: pointer;">
+              <input type="checkbox" id="s-session-london" /> London (08:00 - 16:00 UTC)
+            </label>
+            <label class="checkbox-row" style="font-size: 12px; cursor: pointer;">
+              <input type="checkbox" id="s-session-new_york" /> New York (13:00 - 21:00 UTC)
+            </label>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 20px; margin: 12px 0 16px;">
+          <div class="checkbox-row"><input type="checkbox" id="s-reqsl" /><label for="s-reqsl">Requires Initial Stop Loss</label></div>
+          <div class="checkbox-row"><input type="checkbox" id="s-reqtp" /><label for="s-reqtp">Requires Initial Take Profit</label></div>
+        </div>
+
         <input type="hidden" id="s-id" />
         <div class="btn-row">
           <button class="btn btn-primary" id="btn-save-strategy">Save Strategy</button>
-          <button class="btn" id="btn-clear-strategy">Clear</button>
+          <button class="btn" id="btn-clear-strategy">Clear Form</button>
         </div>
       </div>
     </div>
   `;
+
+  renderStrategyHero();
   renderStrategyList();
+
   document.getElementById("btn-clear-strategy").addEventListener("click", clearStrategyForm);
   document.getElementById("btn-save-strategy").addEventListener("click", saveStrategyForm);
+
+  const searchInput = document.getElementById("strat-search");
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      stratSearchQuery = e.target.value.toLowerCase().trim();
+      renderStrategyList();
+    });
+  }
+
+  const presetSelect = document.getElementById("strat-preset-select");
+  if (presetSelect) {
+    presetSelect.addEventListener("change", (e) => {
+      if (e.target.value) {
+        applyStrategyPreset(e.target.value);
+        presetSelect.value = "";
+      }
+    });
+  }
+}
+
+function renderStrategyHero() {
+  const el = document.getElementById("strat-hero-strip");
+  if (!el) return;
+
+  const strats = state.strategies || [];
+  const closedTrades = (state.trades || []).filter((t) => t.status === "CLOSED");
+  const assignedTrades = closedTrades.filter((t) => t.strategy_id !== null && t.strategy_id !== undefined);
+
+  const coveragePct = closedTrades.length > 0 ? ((assignedTrades.length / closedTrades.length) * 100).toFixed(0) : "0";
+  const compliantCount = assignedTrades.filter((t) => t.compliance_status === "COMPLIANT").length;
+  const overallCompliance = assignedTrades.length > 0 ? ((compliantCount / assignedTrades.length) * 100).toFixed(0) : "—";
+
+  // Identify top strategy by net profit / R
+  let topStratName = "None yet";
+  let topStratSub = "Assign rules to trades";
+  let maxR = -999999;
+  strats.forEach((s) => {
+    const sTrades = closedTrades.filter((t) => String(t.strategy_id) === String(s.id));
+    if (sTrades.length > 0) {
+      const sumR = sTrades.reduce((acc, t) => acc + (t.realized_r || 0), 0);
+      const sumP = sTrades.reduce((acc, t) => acc + (t.net_profit || 0), 0);
+      if (sumR > maxR) {
+        maxR = sumR;
+        topStratName = esc(s.name);
+        topStratSub = `${sumR >= 0 ? "+" : ""}${fmtNum(sumR, 2)} R ($${fmtNum(sumP)})`;
+      }
+    }
+  });
+
+  el.innerHTML = `
+    <div class="strat-hero-card">
+      <div class="kpi-label">Active Strategies</div>
+      <div class="strat-hero-val">${strats.length}</div>
+      <div class="kpi-sub">${strats.filter((s) => s.is_active !== false).length} active rule sets</div>
+    </div>
+    <div class="strat-hero-card">
+      <div class="kpi-label">Strategy Coverage</div>
+      <div class="strat-hero-val ${coveragePct >= 75 ? "win" : ""}">${coveragePct}%</div>
+      <div class="kpi-sub">${assignedTrades.length} of ${closedTrades.length} closed trades assigned</div>
+      <div class="strat-progress-bar">
+        <div class="strat-progress-fill" style="width: ${coveragePct}%;"></div>
+      </div>
+    </div>
+    <div class="strat-hero-card">
+      <div class="kpi-label">Top Performer</div>
+      <div class="strat-hero-val" style="font-size: 18px; line-height: 1.2;">${topStratName}</div>
+      <div class="kpi-sub ${maxR > 0 ? "win" : ""}">${topStratSub}</div>
+    </div>
+    <div class="strat-hero-card">
+      <div class="kpi-label">Overall Adherence</div>
+      <div class="strat-hero-val ${overallCompliance >= 80 ? "win" : overallCompliance >= 60 ? "" : "loss"}">
+        ${overallCompliance !== "—" ? overallCompliance + "%" : "—"}
+      </div>
+      <div class="kpi-sub">${compliantCount} compliant / ${assignedTrades.length - compliantCount} deviations</div>
+    </div>
+  `;
 }
 
 function renderStrategyList() {
   const el = document.getElementById("strategy-list");
-  if (!state.strategies.length) {
-    el.innerHTML = emptyState("\u{1F3AF}", "No strategies yet", "Create one on the right to start tracking rule compliance.");
+  if (!el) return;
+
+  let strats = state.strategies || [];
+  if (stratSearchQuery) {
+    strats = strats.filter((s) =>
+      s.name.toLowerCase().includes(stratSearchQuery) ||
+      (s.description && s.description.toLowerCase().includes(stratSearchQuery)) ||
+      (s.allowed_symbols && s.allowed_symbols.some((sym) => sym.toLowerCase().includes(stratSearchQuery)))
+    );
+  }
+
+  if (!strats.length) {
+    el.innerHTML = emptyState("🎯", "No strategies found", "Create a new strategy using the form on the right or select a pre-built preset.");
     return;
   }
-  el.innerHTML = state.strategies.map((s) => `
-    <div class="card" style="padding:14px;margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;align-items:start">
-        <div>
-          <strong>${esc(s.name)}</strong>
-          <div class="kpi-sub">${esc(s.description || "")}</div>
-          <div class="kpi-sub" style="margin-top:6px">Min R:R ${s.min_rr ?? "\u2014"} \u00b7 Max Risk ${s.max_risk_pct ?? "\u2014"}% \u00b7 ${s.allowed_direction}</div>
+
+  const closedTrades = (state.trades || []).filter((t) => t.status === "CLOSED");
+
+  el.innerHTML = strats.map((s) => {
+    const stratTrades = closedTrades.filter((t) => String(t.strategy_id) === String(s.id));
+    const count = stratTrades.length;
+    const wins = stratTrades.filter((t) => t.net_profit > 0).length;
+    const winRate = count > 0 ? ((wins / count) * 100).toFixed(0) : 0;
+    const netProfit = stratTrades.reduce((acc, t) => acc + (t.net_profit || 0), 0);
+    const netR = stratTrades.reduce((acc, t) => acc + (t.realized_r || 0), 0);
+    const compliant = stratTrades.filter((t) => t.compliance_status === "COMPLIANT").length;
+    const complianceRate = count > 0 ? ((compliant / count) * 100).toFixed(0) : "—";
+    const deviations = count - compliant;
+
+    // Badges for allowed symbols & sessions
+    let symbolsHtml = `<span class="badge badge-neutral">All Instruments</span>`;
+    if (s.allowed_symbols && s.allowed_symbols.length > 0) {
+      symbolsHtml = s.allowed_symbols.map((sym) => `<span class="badge badge-info">${esc(sym)}</span>`).join(" ");
+    }
+
+    let sessionsHtml = `<span class="badge badge-neutral">All Sessions</span>`;
+    if (s.allowed_sessions && s.allowed_sessions.length > 0) {
+      sessionsHtml = s.allowed_sessions.map((sess) => `<span class="badge badge-warning">${esc(sess)}</span>`).join(" ");
+    }
+
+    return `
+      <div class="strat-card">
+        <div class="strat-card-header">
+          <div>
+            <div class="strat-card-title">
+              <b>${esc(s.name)}</b>
+              <span class="badge ${s.is_active !== false ? "badge-success" : "badge-neutral"}">${s.is_active !== false ? "Active" : "Archived"}</span>
+            </div>
+            ${s.description ? `<div class="strat-card-desc">${esc(s.description)}</div>` : ""}
+          </div>
+          <div class="btn-row" style="margin: 0; flex-shrink: 0;">
+            <button class="btn btn-sm" data-filter-trades="${s.id}">Filter Trades</button>
+            <button class="btn btn-sm" data-edit="${s.id}">Edit</button>
+            <button class="btn btn-sm btn-danger" data-del="${s.id}">Delete</button>
+          </div>
         </div>
-        <div class="btn-row" style="margin-top:0">
-          <button class="btn" data-edit="${s.id}">Edit</button>
-          <button class="btn btn-danger" data-del="${s.id}">Delete</button>
+
+        <!-- Strategy Rules Matrix -->
+        <div class="strat-rules-grid">
+          <div class="strat-rule-cell">
+            <span class="lbl">Min R:R:</span>
+            <b>${s.min_rr !== null && s.min_rr !== undefined ? s.min_rr.toFixed(1) + ":1" : "—"}</b>
+          </div>
+          <div class="strat-rule-cell">
+            <span class="lbl">Max Risk:</span>
+            <b>${s.max_risk_pct !== null && s.max_risk_pct !== undefined ? s.max_risk_pct + "%" : "—"}</b>
+          </div>
+          <div class="strat-rule-cell">
+            <span class="lbl">Max Trades/Day:</span>
+            <b>${s.max_trades_per_day ?? "—"}</b>
+          </div>
+          <div class="strat-rule-cell">
+            <span class="lbl">Direction:</span>
+            <b>${esc(s.allowed_direction || "ALL")}</b>
+          </div>
+          <div class="strat-rule-cell">
+            <span class="lbl">Stop Loss:</span>
+            <b class="${s.requires_sl ? "win" : ""}">${s.requires_sl ? "🛡️ Mandatory" : "Optional"}</b>
+          </div>
+          <div class="strat-rule-cell">
+            <span class="lbl">Take Profit:</span>
+            <b>${s.requires_tp ? "🎯 Mandatory" : "Optional"}</b>
+          </div>
+        </div>
+
+        <div class="strat-tags-row">
+          <div><span class="lbl" style="font-size: 11px; margin-right: 4px;">Instruments:</span> ${symbolsHtml}</div>
+          <div><span class="lbl" style="font-size: 11px; margin-right: 4px;">Sessions:</span> ${sessionsHtml}</div>
+        </div>
+
+        <!-- Strategy Live Performance Strip -->
+        <div class="strat-perf-strip">
+          <div class="strat-perf-item">
+            <span class="lbl">Executed Trades</span>
+            <b>${count}</b>
+          </div>
+          <div class="strat-perf-item">
+            <span class="lbl">Win Rate</span>
+            <b class="${winRate >= 50 ? "win" : ""}">${count > 0 ? winRate + "%" : "—"}</b>
+          </div>
+          <div class="strat-perf-item">
+            <span class="lbl">Net Return</span>
+            <b class="${netR >= 0 ? "win" : "loss"}">${count > 0 ? (netR >= 0 ? "+" : "") + fmtNum(netR, 2) + " R" : "—"}</b>
+          </div>
+          <div class="strat-perf-item">
+            <span class="lbl">Realized P/L</span>
+            <b class="${netProfit >= 0 ? "win" : "loss"}">${count > 0 ? (netProfit >= 0 ? "+$" : "-$") + fmtNum(Math.abs(netProfit)) : "—"}</b>
+          </div>
+          <div class="strat-perf-item">
+            <span class="lbl">Discipline Adherence</span>
+            <b class="${complianceRate >= 80 ? "win" : complianceRate !== "—" ? "loss" : ""}">${complianceRate !== "—" ? complianceRate + "%" : "—"}</b>
+          </div>
         </div>
       </div>
-    </div>`).join("");
+    `;
+  }).join("");
+
   el.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => fillStrategyForm(b.dataset.edit)));
   el.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => deleteStrategy(b.dataset.del)));
+  el.querySelectorAll("[data-filter-trades]").forEach((b) => b.addEventListener("click", () => filterTradesByStrategy(b.dataset.filterTrades)));
+}
+
+function filterTradesByStrategy(strategyId) {
+  state.tradeFilter = {
+    search: "",
+    direction: "ALL",
+    outcome: "ALL",
+    strategyId: String(strategyId),
+    compliance: "ALL",
+    emotion: "ALL",
+    dateRange: "ALL",
+    symbol: "ALL",
+    sortCol: "open_time",
+    sortDir: "desc",
+  };
+  navigate("trades");
+}
+
+function applyStrategyPreset(key) {
+  const p = STRATEGY_PRESETS[key];
+  if (!p) return;
+
+  document.getElementById("s-name").value = p.name;
+  document.getElementById("s-desc").value = p.desc;
+  document.getElementById("s-minrr").value = p.min_rr !== null ? p.min_rr : "";
+  document.getElementById("s-maxrisk").value = p.max_risk_pct !== null ? p.max_risk_pct : "";
+  document.getElementById("s-maxtrades").value = p.max_trades_per_day !== null ? p.max_trades_per_day : "";
+  document.getElementById("s-direction").value = p.allowed_direction || "ALL";
+  document.getElementById("s-reqsl").checked = !!p.requires_sl;
+  document.getElementById("s-reqtp").checked = !!p.requires_tp;
+  document.getElementById("s-symbols").value = (p.allowed_symbols || []).join(", ");
+
+  ["asia", "london", "new_york"].forEach((sessKey) => {
+    const cb = document.getElementById("s-session-" + sessKey);
+    if (cb) {
+      cb.checked = (p.allowed_sessions || []).some((s) => s.toLowerCase() === sessKey);
+    }
+  });
+
+  showTransientBanner(`Loaded '${p.name}' preset rules.`, true);
 }
 
 function clearStrategyForm() {
   document.getElementById("form-title").textContent = "New Strategy";
-  ["s-id"].forEach((id) => document.getElementById(id).value = "");
+  document.getElementById("s-id").value = "";
   document.getElementById("s-name").value = "";
   document.getElementById("s-desc").value = "";
   document.getElementById("s-minrr").value = "";
@@ -1135,6 +1463,11 @@ function clearStrategyForm() {
   document.getElementById("s-direction").value = "ALL";
   document.getElementById("s-reqsl").checked = false;
   document.getElementById("s-reqtp").checked = false;
+  document.getElementById("s-symbols").value = "";
+  ["asia", "london", "new_york"].forEach((sess) => {
+    const cb = document.getElementById("s-session-" + sess);
+    if (cb) cb.checked = false;
+  });
 }
 
 function fillStrategyForm(id) {
@@ -1150,15 +1483,32 @@ function fillStrategyForm(id) {
   document.getElementById("s-direction").value = s.allowed_direction || "ALL";
   document.getElementById("s-reqsl").checked = !!s.requires_sl;
   document.getElementById("s-reqtp").checked = !!s.requires_tp;
+  document.getElementById("s-symbols").value = (s.allowed_symbols || []).join(", ");
+
+  const sessions = (s.allowed_sessions || []).map((x) => x.toLowerCase());
+  ["asia", "london", "new_york"].forEach((sess) => {
+    const cb = document.getElementById("s-session-" + sess);
+    if (cb) cb.checked = sessions.includes(sess);
+  });
 }
 
 async function saveStrategyForm() {
   const id = document.getElementById("s-id").value;
+  const symbolsRaw = document.getElementById("s-symbols").value;
+  const allowed_symbols = symbolsRaw
+    ? symbolsRaw.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean)
+    : [];
+
+  const allowed_sessions = [];
+  if (document.getElementById("s-session-asia").checked) allowed_sessions.push("ASIA");
+  if (document.getElementById("s-session-london").checked) allowed_sessions.push("LONDON");
+  if (document.getElementById("s-session-new_york").checked) allowed_sessions.push("NEW_YORK");
+
   const payload = {
     name: document.getElementById("s-name").value.trim(),
     description: document.getElementById("s-desc").value.trim(),
-    allowed_symbols: [],
-    allowed_sessions: [],
+    allowed_symbols: allowed_symbols,
+    allowed_sessions: allowed_sessions,
     min_rr: document.getElementById("s-minrr").value ? parseFloat(document.getElementById("s-minrr").value) : null,
     max_risk_pct: document.getElementById("s-maxrisk").value ? parseFloat(document.getElementById("s-maxrisk").value) : null,
     max_trades_per_day: document.getElementById("s-maxtrades").value ? parseInt(document.getElementById("s-maxtrades").value, 10) : null,
@@ -1167,21 +1517,35 @@ async function saveStrategyForm() {
     allowed_direction: document.getElementById("s-direction").value,
     is_active: true,
   };
+
+  if (!payload.name) {
+    showTransientBanner("Strategy name is required.", false);
+    return;
+  }
+
   try {
     if (id) await apiPut("/strategies/" + id, payload); else await apiPost("/strategies", payload);
     state.strategies = await apiGet("/strategies");
+    renderStrategyHero();
     renderStrategyList();
     clearStrategyForm();
-    showTransientBanner("Strategy saved.", true);
-  } catch (e) { showTransientBanner(e.message, false); }
+    showTransientBanner("Strategy saved successfully.", true);
+  } catch (e) {
+    showTransientBanner(e.message, false);
+  }
 }
 
 async function deleteStrategy(id) {
+  if (!confirm("Are you sure you want to delete this strategy?")) return;
   try {
     await apiDelete("/strategies/" + id);
     state.strategies = await apiGet("/strategies");
+    renderStrategyHero();
     renderStrategyList();
-  } catch (e) { showTransientBanner(e.message, false); }
+    showTransientBanner("Strategy deleted.", true);
+  } catch (e) {
+    showTransientBanner(e.message, false);
+  }
 }
 
 // ------------------------------------------------------------------ strategy vs trader

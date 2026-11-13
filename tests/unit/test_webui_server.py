@@ -616,3 +616,34 @@ def test_live_journal_endpoint_returns_events_when_present(client):
     ev = next(e for e in data["events"] if e["position_id"] == 5005)
     assert ev["event_type"] == "SL_MODIFIED"
     assert ev["details"]["reason"] == "SL_MOVED_AWAY"
+
+
+def test_strategy_with_symbols_and_sessions(client):
+    payload = {
+        "name": "London Breakout",
+        "description": "Momentum strategy during London session",
+        "allowed_symbols": ["EURUSD", "GBPUSD"],
+        "allowed_sessions": ["LONDON"],
+        "min_rr": 2.0,
+        "max_risk_pct": 1.0,
+        "max_trades_per_day": 3,
+        "requires_sl": True,
+        "requires_tp": False,
+        "allowed_direction": "BUY",
+        "is_active": True
+    }
+    res = client.post("/api/strategies", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["name"] == "London Breakout"
+    assert data["allowed_symbols"] == ["EURUSD", "GBPUSD"]
+    assert data["allowed_sessions"] == ["LONDON"]
+    assert data["requires_sl"] is True
+    assert data["allowed_direction"] == "BUY"
+
+    strat_id = data["id"]
+    get_res = client.get("/api/strategies")
+    assert get_res.status_code == 200
+    strat = next(s for s in get_res.json() if s["id"] == strat_id)
+    assert strat["allowed_symbols"] == ["EURUSD", "GBPUSD"]
+    assert strat["allowed_sessions"] == ["LONDON"]
