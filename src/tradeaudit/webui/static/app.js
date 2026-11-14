@@ -237,6 +237,9 @@ function drawLineChart(canvas, series, opts = {}) {
   if (mainColor === "#26a69a" || mainColor.includes("166")) {
     grad.addColorStop(0, "rgba(38, 166, 154, 0.22)");
     grad.addColorStop(1, "rgba(38, 166, 154, 0.0)");
+  } else if (mainColor === "#ef5350" || mainColor.includes("239")) {
+    grad.addColorStop(0, "rgba(239, 83, 80, 0.04)");
+    grad.addColorStop(1, "rgba(239, 83, 80, 0.25)");
   } else {
     grad.addColorStop(0, "rgba(88, 166, 255, 0.22)");
     grad.addColorStop(1, "rgba(88, 166, 255, 0.0)");
@@ -308,14 +311,18 @@ async function viewDashboard() {
       <div class="kpi"><div class="kpi-label">Expectancy (R)</div><div class="kpi-value ${m.expectancy_r >= 0 ? "win" : "loss"}">${fmtNum(m.expectancy_r, 3)}</div><div class="kpi-sub">${m.trades_with_r} trades with known R</div></div>
       <div class="kpi"><div class="kpi-label">Profit Factor</div><div class="kpi-value">${m.profit_factor === null ? "\u221E" : fmtNum(m.profit_factor)}</div><div class="kpi-sub">Verdict: ${m.verdict.replace(/_/g, " ")}</div></div>
     </div>
-    <div class="two-col" style="margin-top:16px">
+    <div class="grid grid-3" style="margin-top:16px">
       <div class="card">
         <div class="card-title">Cumulative R</div>
         <canvas class="chart-canvas" id="chart-r"></canvas>
       </div>
       <div class="card">
-        <div class="card-title">Cumulative P/L</div>
+        <div class="card-title">Cumulative P/L ($)</div>
         <canvas class="chart-canvas" id="chart-money"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-title">Underwater Drawdown (R)</div>
+        <canvas class="chart-canvas" id="chart-drawdown"></canvas>
       </div>
     </div>
     <div class="grid grid-4" style="margin-top:16px">
@@ -333,6 +340,9 @@ async function viewDashboard() {
         <div class="kpi-sub">Max consecutive wins</div><div class="kpi-value win">${m.max_consecutive_wins}</div>
         <div class="kpi-sub" style="margin-top:8px">Max consecutive losses</div><div class="kpi-value loss">${m.max_consecutive_losses}</div></div>
     </div>
+    <section class="card calendar-card" id="trading-calendar-section" aria-labelledby="calendar-heading">
+      <div id="calendar-container"></div>
+    </section>
     <section class="card quality-card" aria-labelledby="quality-heading">
       <div class="quality-header">
         <div>
@@ -390,6 +400,220 @@ async function viewDashboard() {
   });
   drawLineChart(document.getElementById("chart-r"), m.cumulative_r_series, { color: "#58a6ff" });
   drawLineChart(document.getElementById("chart-money"), m.cumulative_monetary_series, { color: "#26a69a" });
+  const underwaterSeries = (m.drawdown_r_series || []).map((d) => -Math.abs(d));
+  drawLineChart(document.getElementById("chart-drawdown"), underwaterSeries, { color: "#ef5350" });
+
+  renderTradingCalendar(data.daily_summary || []);
+}
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
+function renderTradingCalendar(dailySummary) {
+  const container = document.getElementById("calendar-container");
+  if (!container) return;
+
+  if (state.calYear === undefined || state.calMonth === undefined) {
+    if (dailySummary.length > 0) {
+      const lastItem = dailySummary[dailySummary.length - 1];
+      const parts = lastItem.date.split("-");
+      state.calYear = parseInt(parts[0], 10);
+      state.calMonth = parseInt(parts[1], 10) - 1;
+    } else {
+      const now = new Date();
+      state.calYear = now.getFullYear();
+      state.calMonth = now.getMonth();
+    }
+  }
+  if (!state.calUnit) state.calUnit = "money";
+
+  const dailyMap = {};
+  for (const d of dailySummary) {
+    dailyMap[d.date] = d;
+  }
+
+  const y = state.calYear;
+  const m = state.calMonth;
+  const monthPrefix = `${y}-${String(m + 1).padStart(2, "0")}`;
+
+  const monthDays = dailySummary.filter((d) => d.date.startsWith(monthPrefix));
+  let monthTrades = 0, monthProfit = 0, monthR = 0, greenDays = 0, redDays = 0;
+  for (const d of monthDays) {
+    monthTrades += d.trades_count;
+    monthProfit += d.net_profit;
+    monthR += d.net_r;
+    if (d.net_profit > 0) greenDays++;
+    else if (d.net_profit < 0) redDays++;
+  }
+  const activeTradingDays = monthDays.length;
+  const greenPct = activeTradingDays > 0 ? (greenDays / activeTradingDays) * 100 : 0;
+  const avgDayProfit = activeTradingDays > 0 ? monthProfit / activeTradingDays : 0;
+
+  const firstDay = new Date(y, m, 1);
+  const firstDayIdx = (firstDay.getDay() + 6) % 7; // Monday = 0, Sunday = 6
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+
+  let cellsHtml = "";
+  for (let i = 0; i < firstDayIdx; i++) {
+    cellsHtml += `<div class="cal-cell cal-empty" aria-hidden="true"></div>`;
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${y}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const d = dailyMap[dateStr];
+    if (!d) {
+      cellsHtml += `
+        <div class="cal-cell cal-inactive">
+          <div class="cal-cell-header"><span class="cal-day-num">${day}</span></div>
+          <div class="cal-cell-empty-label">—</div>
+        </div>`;
+    } else {
+      const isWin = d.net_profit > 0;
+      const isLoss = d.net_profit < 0;
+      const cls = isWin ? "cal-win" : (isLoss ? "cal-loss" : "cal-be");
+      const valText = state.calUnit === "r"
+        ? `${d.net_r >= 0 ? "+" : ""}${d.net_r.toFixed(2)} R`
+        : `${d.net_profit >= 0 ? "+" : ""}${fmtNum(d.net_profit)}`;
+      const subText = state.calUnit === "r"
+        ? fmtNum(d.net_profit)
+        : (d.trades_with_r > 0 ? `${d.net_r >= 0 ? "+" : ""}${d.net_r.toFixed(2)} R` : `${Math.round(d.win_rate * 100)}% W`);
+      const tooltip = `${dateStr}: ${d.trades_count} trades (${d.wins}W / ${d.losses}L), Net: ${fmtNum(d.net_profit)} (${d.net_r.toFixed(2)}R), Win Rate: ${Math.round(d.win_rate * 100)}% · Click to view in ledger`;
+
+      cellsHtml += `
+        <div class="cal-cell ${cls} cal-active clickable-cal-day" data-cal-date="${dateStr}" role="button" tabindex="0" title="${esc(tooltip)}">
+          <div class="cal-cell-header">
+            <span class="cal-day-num">${day}</span>
+            <span class="cal-badge">${d.trades_count} ${d.trades_count === 1 ? "trade" : "trades"}</span>
+          </div>
+          <div class="cal-cell-val ${isWin ? "win" : (isLoss ? "loss" : "")}">${valText}</div>
+          <div class="cal-cell-sub">${subText}</div>
+        </div>`;
+    }
+  }
+
+  const totalGridCells = firstDayIdx + daysInMonth;
+  const trailingCells = (7 - (totalGridCells % 7)) % 7;
+  for (let i = 0; i < trailingCells; i++) {
+    cellsHtml += `<div class="cal-cell cal-empty" aria-hidden="true"></div>`;
+  }
+
+  container.innerHTML = `
+    <div class="cal-nav-bar">
+      <div class="cal-nav-left">
+        <button class="btn btn-sm" id="cal-btn-prev" title="Previous Month">◀</button>
+        <h3 class="cal-title" id="calendar-heading">${MONTH_NAMES[m]} ${y}</h3>
+        <button class="btn btn-sm" id="cal-btn-next" title="Next Month">▶</button>
+        ${dailySummary.length > 0 ? '<button class="btn btn-sm" id="cal-btn-latest" title="Jump to latest trading activity">Latest</button>' : ''}
+      </div>
+      <div class="cal-nav-right">
+        <div class="segmented-control" role="group" aria-label="Calendar display units">
+          <button class="segmented-btn ${state.calUnit === "money" ? "active" : ""}" id="cal-unit-money">P/L ($)</button>
+          <button class="segmented-btn ${state.calUnit === "r" ? "active" : ""}" id="cal-unit-r">R-Multiple</button>
+        </div>
+      </div>
+    </div>
+    <div class="cal-stats-strip">
+      <div class="cal-stat-item">
+        <span class="cal-stat-label">Month Net P/L</span>
+        <strong class="cal-stat-val ${monthProfit >= 0 ? "win" : "loss"}">${fmtNum(monthProfit)}</strong>
+      </div>
+      <div class="cal-stat-divider"></div>
+      <div class="cal-stat-item">
+        <span class="cal-stat-label">Month Net R</span>
+        <strong class="cal-stat-val ${monthR >= 0 ? "win" : "loss"}">${monthR >= 0 ? "+" : ""}${monthR.toFixed(2)} R</strong>
+      </div>
+      <div class="cal-stat-divider"></div>
+      <div class="cal-stat-item">
+        <span class="cal-stat-label">Trading Days</span>
+        <strong class="cal-stat-val">${activeTradingDays} days</strong>
+      </div>
+      <div class="cal-stat-divider"></div>
+      <div class="cal-stat-item">
+        <span class="cal-stat-label">Profitable Days</span>
+        <strong class="cal-stat-val win">${greenDays}W / ${redDays}L <small>(${greenPct.toFixed(0)}%)</small></strong>
+      </div>
+      <div class="cal-stat-divider"></div>
+      <div class="cal-stat-item">
+        <span class="cal-stat-label">Total Trades</span>
+        <strong class="cal-stat-val">${monthTrades} trades</strong>
+      </div>
+      <div class="cal-stat-divider"></div>
+      <div class="cal-stat-item">
+        <span class="cal-stat-label">Avg Day P/L</span>
+        <strong class="cal-stat-val ${avgDayProfit >= 0 ? "win" : "loss"}">${fmtNum(avgDayProfit)}</strong>
+      </div>
+    </div>
+    <div class="cal-grid">
+      <div class="cal-weekday-header">Mon</div>
+      <div class="cal-weekday-header">Tue</div>
+      <div class="cal-weekday-header">Wed</div>
+      <div class="cal-weekday-header">Thu</div>
+      <div class="cal-weekday-header">Fri</div>
+      <div class="cal-weekday-header">Sat</div>
+      <div class="cal-weekday-header">Sun</div>
+      ${cellsHtml}
+    </div>
+  `;
+
+  document.getElementById("cal-btn-prev").addEventListener("click", () => {
+    state.calMonth--;
+    if (state.calMonth < 0) {
+      state.calMonth = 11;
+      state.calYear--;
+    }
+    renderTradingCalendar(dailySummary);
+  });
+
+  document.getElementById("cal-btn-next").addEventListener("click", () => {
+    state.calMonth++;
+    if (state.calMonth > 11) {
+      state.calMonth = 0;
+      state.calYear++;
+    }
+    renderTradingCalendar(dailySummary);
+  });
+
+  const latestBtn = document.getElementById("cal-btn-latest");
+  if (latestBtn) {
+    latestBtn.addEventListener("click", () => {
+      if (dailySummary.length > 0) {
+        const lastItem = dailySummary[dailySummary.length - 1];
+        const parts = lastItem.date.split("-");
+        state.calYear = parseInt(parts[0], 10);
+        state.calMonth = parseInt(parts[1], 10) - 1;
+        renderTradingCalendar(dailySummary);
+      }
+    });
+  }
+
+  document.getElementById("cal-unit-money").addEventListener("click", () => {
+    state.calUnit = "money";
+    renderTradingCalendar(dailySummary);
+  });
+
+  document.getElementById("cal-unit-r").addEventListener("click", () => {
+    state.calUnit = "r";
+    renderTradingCalendar(dailySummary);
+  });
+
+  container.querySelectorAll(".clickable-cal-day").forEach((cell) => {
+    cell.addEventListener("click", () => {
+      const date = cell.getAttribute("data-cal-date");
+      if (date) {
+        state.tradeFilter.search = date;
+        window.location.hash = "#trades";
+        showTransientBanner(`Filtered trades for ${date}`, true);
+      }
+    });
+    cell.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        cell.click();
+      }
+    });
+  });
 }
 
 // ------------------------------------------------------------------ trades

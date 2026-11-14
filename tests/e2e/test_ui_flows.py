@@ -448,3 +448,38 @@ def test_strategies_view_presets_and_creation(page, live_server):
     assert page.is_visible("text=Min R:R")
     assert page.is_visible("text=2.5:1")
     assert page.is_visible("text=LONDON")
+
+
+def test_dashboard_calendar_and_underwater_chart(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#dashboard")
+    page.wait_for_selector("#chart-drawdown", timeout=15000)
+    assert page.is_visible("#chart-drawdown")
+    assert page.is_visible("#trading-calendar-section")
+    assert page.is_visible("#calendar-heading")
+
+    # Calendar navigation and unit controls
+    assert page.is_visible("#cal-btn-prev")
+    assert page.is_visible("#cal-btn-next")
+    assert page.is_visible("#cal-unit-money")
+    assert page.is_visible("#cal-unit-r")
+
+    # The seeded trade is on 2026-01-01 ($50.00, +1.5R)
+    # The calendar defaults to January 2026
+    assert "January 2026" in page.text_content("#calendar-heading")
+    assert page.is_visible('.clickable-cal-day[data-cal-date="2026-01-01"]')
+    assert page.is_visible(".cal-cell.cal-win")
+
+    # Default unit is money ($50.00)
+    day_cell = page.locator('.clickable-cal-day[data-cal-date="2026-01-01"]')
+    assert "50.00" in day_cell.text_content()
+
+    # Switch to R-multiple mode
+    page.click("#cal-unit-r")
+    page.wait_for_timeout(200)
+    assert "+1.50 R" in day_cell.text_content()
+
+    # Click the calendar day to drill down to trades ledger
+    day_cell.click()
+    page.wait_for_url(lambda url: "#trades" in url, timeout=10000)
+    page.wait_for_selector("#trades-search", timeout=10000)
+    assert page.input_value("#trades-search") == "2026-01-01"

@@ -48,6 +48,11 @@
 - Allowed trading sessions multi-select checklist (Asia, London, New York) and comma-separated allowed symbols input in strategy rule configuration.
 - Real-time strategy performance metrics cards on each strategy detailing trade volume, win rate %, realized profit, net R, and adherence rate with 1-click drill-down filtering to the trade ledger.
 - Unit and Playwright browser E2E test coverage for strategy rule presets, session/symbol persistence, and UI strategy creation flows.
+- Interactive Trading Calendar and Daily P&L Heatmap on the Dashboard with month navigation, profitable day ratio, and 1-click date drill-down to the trade ledger.
+- Toggle between currency ($ P/L) and risk-adjusted units (R-Multiple) across calendar days.
+- Underwater Drawdown (R) equity curve visualization with crimson depth gradient and high-water mark recovery tracking.
+- Aggregate daily summary engine in `/api/dashboard` computing daily trade frequency, win/loss rates, net monetary outcome, and realized R.
+- Unit and Playwright browser E2E test coverage for dashboard daily summaries, calendar interactions, and underwater drawdown rendering.
 
 ## 1.1.1 — 2026-10-27
 

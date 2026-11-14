@@ -12,7 +12,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from tradeaudit.app.exceptions import MT5Error, CredentialStoreError
-from tradeaudit.domain.models import MT5Settings, Strategy
+from tradeaudit.domain.models import MT5Settings, Strategy, Trade
 from tradeaudit.infrastructure.database.models import TradeModel
 from tradeaudit.domain.candles import TimeFrame
 from tradeaudit.domain.annotations import ChartAnnotation, AnnotationType, TradeJournalNote
@@ -468,6 +468,49 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
 
     # ----------------------------------------------------------- dashboard
 
+    def _build_daily_summary(trades: List[Trade]) -> List[Dict[str, Any]]:
+        days: Dict[str, Dict[str, Any]] = {}
+        for t in trades:
+            time_ref = t.close_time or t.open_time
+            if not time_ref:
+                continue
+            day_str = time_ref.strftime("%Y-%m-%d")
+            if day_str not in days:
+                days[day_str] = {
+                    "date": day_str,
+                    "trades_count": 0,
+                    "wins": 0,
+                    "losses": 0,
+                    "be": 0,
+                    "net_profit": 0.0,
+                    "gross_profit": 0.0,
+                    "gross_loss": 0.0,
+                    "net_r": 0.0,
+                    "trades_with_r": 0,
+                }
+            d = days[day_str]
+            d["trades_count"] += 1
+            pl = t.net_profit if t.net_profit is not None else (t.profit or 0.0)
+            d["net_profit"] = round(d["net_profit"] + pl, 2)
+            if pl > 0:
+                d["wins"] += 1
+                d["gross_profit"] = round(d["gross_profit"] + pl, 2)
+            elif pl < 0:
+                d["losses"] += 1
+                d["gross_loss"] = round(d["gross_loss"] + abs(pl), 2)
+            else:
+                d["be"] += 1
+
+            if t.realized_r is not None:
+                d["net_r"] = round(d["net_r"] + t.realized_r, 4)
+                d["trades_with_r"] += 1
+
+        result = list(days.values())
+        result.sort(key=lambda x: x["date"])
+        for d in result:
+            d["win_rate"] = round(d["wins"] / d["trades_count"], 4) if d["trades_count"] > 0 else 0.0
+        return result
+
     @app.get("/api/dashboard")
     def dashboard():
         _, closed = closed_trades()
@@ -480,11 +523,13 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
                 account_info = None
         quality = DataQualityAnalyzer.analyze(closed)
         snapshot = AuditSnapshotService.build(closed, ctx.settings.app_version)
+        daily_summary = _build_daily_summary(closed)
         return {
             "metrics": to_jsonable(metrics),
             "data_quality": to_jsonable(quality),
             "audit_snapshot": snapshot.as_dict(),
             "account": to_jsonable(account_info),
+            "daily_summary": daily_summary,
         }
 
     @app.get("/api/audit-snapshot")

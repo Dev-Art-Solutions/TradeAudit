@@ -647,3 +647,62 @@ def test_strategy_with_symbols_and_sessions(client):
     strat = next(s for s in get_res.json() if s["id"] == strat_id)
     assert strat["allowed_symbols"] == ["EURUSD", "GBPUSD"]
     assert strat["allowed_sessions"] == ["LONDON"]
+
+
+def test_dashboard_daily_summary_and_underwater_series(client):
+    # Verify empty state first
+    empty_res = client.get("/api/dashboard")
+    assert empty_res.status_code == 200
+    assert empty_res.json()["daily_summary"] == []
+
+    # Configure account and save trades on multiple days
+    client.post("/api/settings", json={"login": 8888, "server": "Test-Broker", "password": "pass"})
+    from datetime import datetime, timezone
+    from tradeaudit.domain.models import Trade
+
+    ctx = client.app.state.tradeaudit_context
+    t1 = Trade(
+        account_id=8888, position_id=1, symbol="EURUSD", direction="BUY",
+        open_time=datetime(2026, 3, 10, 8, 30, tzinfo=timezone.utc),
+        close_time=datetime(2026, 3, 10, 10, 15, tzinfo=timezone.utc),
+        status="CLOSED", profit=120.0, realized_r=2.4
+    )
+    t2 = Trade(
+        account_id=8888, position_id=2, symbol="GBPUSD", direction="SELL",
+        open_time=datetime(2026, 3, 10, 13, 0, tzinfo=timezone.utc),
+        close_time=datetime(2026, 3, 10, 14, 0, tzinfo=timezone.utc),
+        status="CLOSED", profit=-40.0, realized_r=-0.8
+    )
+    t3 = Trade(
+        account_id=8888, position_id=3, symbol="USDJPY", direction="BUY",
+        open_time=datetime(2026, 3, 11, 9, 0, tzinfo=timezone.utc),
+        close_time=datetime(2026, 3, 11, 11, 0, tzinfo=timezone.utc),
+        status="CLOSED", profit=75.0, realized_r=1.5
+    )
+    ctx.trade_repo.save_trades(8888, [t1, t2, t3])
+
+    res = client.get("/api/dashboard")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["metrics"]["total_trades"] == 3
+    assert len(data["metrics"]["drawdown_r_series"]) == 3
+
+    daily = data["daily_summary"]
+    assert len(daily) == 2
+    day1 = daily[0]
+    assert day1["date"] == "2026-03-10"
+    assert day1["trades_count"] == 2
+    assert day1["wins"] == 1
+    assert day1["losses"] == 1
+    assert day1["net_profit"] == 80.0
+    assert day1["net_r"] == 1.6
+    assert day1["win_rate"] == 0.5
+
+    day2 = daily[1]
+    assert day2["date"] == "2026-03-11"
+    assert day2["trades_count"] == 1
+    assert day2["wins"] == 1
+    assert day2["losses"] == 0
+    assert day2["net_profit"] == 75.0
+    assert day2["net_r"] == 1.5
+    assert day2["win_rate"] == 1.0
