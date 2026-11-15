@@ -428,7 +428,26 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         trades, _ = closed_trades()
         for t in trades:
             if t.id == trade_id:
-                return to_jsonable(t)
+                trade_dict = to_jsonable(t)
+                if t.position_id:
+                    with ctx.db_manager.session_scope() as session:
+                        from tradeaudit.infrastructure.database.models import SLHistoryModel, TPHistoryModel, TradeEventModel
+                        sl_hist = session.query(SLHistoryModel).filter(SLHistoryModel.position_id == t.position_id).order_by(SLHistoryModel.timestamp.asc()).all()
+                        tp_hist = session.query(TPHistoryModel).filter(TPHistoryModel.position_id == t.position_id).order_by(TPHistoryModel.timestamp.asc()).all()
+                        events = session.query(TradeEventModel).filter(TradeEventModel.position_id == t.position_id).order_by(TradeEventModel.timestamp.asc()).all()
+                        trade_dict["sl_history"] = [
+                            {"old_sl": sh.old_sl, "new_sl": sh.new_sl, "timestamp": sh.timestamp.isoformat() if sh.timestamp else None, "change_reason": sh.change_reason}
+                            for sh in sl_hist
+                        ]
+                        trade_dict["tp_history"] = [
+                            {"old_tp": th.old_tp, "new_tp": th.new_tp, "timestamp": th.timestamp.isoformat() if th.timestamp else None}
+                            for th in tp_hist
+                        ]
+                        trade_dict["events"] = [
+                            {"event_type": ev.event_type, "timestamp": ev.timestamp.isoformat() if ev.timestamp else None, "details": ev.details}
+                            for ev in events
+                        ]
+                return trade_dict
         raise HTTPException(status_code=404, detail="Trade not found.")
 
     @app.post("/api/trades/{trade_id}/assign-strategy")

@@ -682,6 +682,10 @@ async function viewTrades() {
       </select>
     </div>
     <div id="trades-body"></div>
+    <div id="trade-drawer" class="trade-drawer" role="dialog" aria-modal="true" aria-hidden="true">
+      <div class="trade-drawer-backdrop" id="trade-drawer-backdrop"></div>
+      <div class="trade-drawer-panel" id="trade-drawer-panel" tabindex="-1"></div>
+    </div>
   `;
   document.getElementById("btn-sync").addEventListener("click", doSync);
   document.getElementById("btn-export-csv").addEventListener("click", doExportCsv);
@@ -864,7 +868,7 @@ function renderTradesTable() {
     const compTitle = t.deviation_reason ? `Deviation: ${esc(t.deviation_reason)}` : "";
 
     return `
-      <tr class="clickable-row">
+      <tr class="clickable-row" data-trade-id="${t.id}" title="Click to view detailed execution audit">
         <td><b>${esc(t.symbol)}</b></td>
         <td><span class="pill ${t.direction === "BUY" ? "buy" : "sell"}">${t.direction}</span></td>
         <td class="mono">${fmtVolume(t.volume)}</td>
@@ -1003,6 +1007,19 @@ function renderTradesTable() {
       navigate("trade-chart");
     });
   });
+
+  body.querySelectorAll(".clickable-row").forEach((row) => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("select") || e.target.closest("button") || e.target.closest("a")) return;
+      const tradeId = parseInt(row.getAttribute("data-trade-id"), 10);
+      if (tradeId) openTradeDrawer(tradeId);
+    });
+  });
+
+  const drawerBackdrop = document.getElementById("trade-drawer-backdrop");
+  if (drawerBackdrop) {
+    drawerBackdrop.addEventListener("click", closeTradeDrawer);
+  }
 }
 
 async function doExportCsv() {
@@ -4894,3 +4911,310 @@ async function init() {
 }
 
 init();
+
+async function openTradeDrawer(tradeId) {
+  const drawer = document.getElementById("trade-drawer");
+  const panel = document.getElementById("trade-drawer-panel");
+  if (!drawer || !panel) return;
+
+  drawer.classList.add("active");
+  drawer.setAttribute("aria-hidden", "false");
+  document.body.classList.add("drawer-open");
+  panel.innerHTML = `<div class="drawer-loading"><div class="drawer-spinner"></div><div>Loading trade #${tradeId} audit details…</div></div>`;
+
+  try {
+    const trade = await apiGet(`/trades/${tradeId}`);
+    renderTradeDrawerContent(trade);
+  } catch (err) {
+    panel.innerHTML = `
+      <div class="drawer-header">
+        <div class="drawer-header-left">
+          <h3>Error</h3>
+        </div>
+        <button class="btn btn-sm" id="drawer-close-btn" title="Close">✕</button>
+      </div>
+      <div style="padding: 24px; color: var(--loss);">Could not load trade details: ${esc(err.message)}</div>
+    `;
+    const closeBtn = document.getElementById("drawer-close-btn");
+    if (closeBtn) closeBtn.addEventListener("click", closeTradeDrawer);
+  }
+}
+
+function closeTradeDrawer() {
+  const drawer = document.getElementById("trade-drawer");
+  if (drawer) {
+    drawer.classList.remove("active");
+    drawer.setAttribute("aria-hidden", "true");
+  }
+  document.body.classList.remove("drawer-open");
+}
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    const drawer = document.getElementById("trade-drawer");
+    if (drawer && drawer.classList.contains("active")) {
+      closeTradeDrawer();
+    }
+  }
+});
+
+function renderTradeDrawerContent(t) {
+  const panel = document.getElementById("trade-drawer-panel");
+  if (!panel) return;
+
+  const pl = t.net_profit ?? t.profit ?? 0;
+  const isWin = pl > 0;
+  const isLoss = pl < 0;
+  const sign = pl >= 0 ? "+" : "";
+  const netR = t.realized_r !== null && t.realized_r !== undefined ? `${t.realized_r >= 0 ? "+" : ""}${fmtNum(t.realized_r, 2)} R` : "—";
+
+  const stratOptions = `<option value="">None (Unassigned)</option>` + state.strategies.map((s) =>
+    `<option value="${s.id}" ${t.strategy_id === s.id ? "selected" : ""}>${esc(s.name)}</option>`
+  ).join("");
+
+  const EMOTIONS = ["", "CALM", "FOMO", "REVENGE", "GREED", "FEAR", "BOREDOM"];
+  const emotionOptions = EMOTIONS.map((em) =>
+    `<option value="${em}" ${(t.emotion_tag || "").toUpperCase() === em ? "selected" : ""}>${em ? esc(em) : "None"}</option>`
+  ).join("");
+
+  const flagsHtml = (t.auto_behavior_flags || []).map((fl) => `
+    <div class="drawer-flag-item">
+      <div class="drawer-flag-title">⚠️ ${esc((fl.flag_type || "").replace(/_/g, " "))} <span class="cal-badge">${esc(fl.confidence || "MEDIUM")}</span></div>
+      <div class="drawer-flag-reason">${esc(fl.reason || "")}</div>
+    </div>
+  `).join("");
+
+  const deals = t.deals || [];
+  const dealsHtml = deals.length > 0 ? `
+    <div class="drawer-table-wrap">
+      <table class="drawer-table">
+        <thead>
+          <tr>
+            <th>Ticket</th>
+            <th>Type</th>
+            <th>Volume</th>
+            <th>Price</th>
+            <th>Time</th>
+            <th>P/L</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${deals.map((d) => `
+            <tr>
+              <td class="mono">${d.ticket}</td>
+              <td><span class="pill ${d.type === 'BUY' ? 'buy' : 'sell'}">${d.type}</span> <small>${esc(d.entry || '')}</small></td>
+              <td class="mono">${fmtVolume(d.volume)}</td>
+              <td class="mono">${fmtNum(d.price, 5)}</td>
+              <td class="mono"><small>${fmtDate(d.time)}</small></td>
+              <td class="mono ${d.profit >= 0 ? 'win' : 'loss'}">${fmtNum(d.profit)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>` : `<div class="drawer-empty-sub">No underlying deal records attached.</div>`;
+
+  const slHistory = t.sl_history || [];
+  const slHistHtml = slHistory.length > 0 ? `
+    <div class="drawer-history-timeline">
+      ${slHistory.map((sh) => `
+        <div class="drawer-history-item">
+          <div class="drawer-hist-dot"></div>
+          <div class="drawer-hist-body">
+            <div class="drawer-hist-meta">${fmtDate(sh.timestamp)}</div>
+            <div class="drawer-hist-text">
+              SL modified: <code>${sh.old_sl !== null ? fmtNum(sh.old_sl, 5) : 'None'}</code> ➔ <code class="win">${fmtNum(sh.new_sl, 5)}</code>
+              ${sh.change_reason ? `<span class="drawer-hist-reason">(${esc(sh.change_reason)})</span>` : ''}
+            </div>
+          </div>
+        </div>
+      `).join("")}
+    </div>` : `<div class="drawer-empty-sub">No Stop-Loss modifications recorded for this position.</div>`;
+
+  panel.innerHTML = `
+    <div class="drawer-header">
+      <div class="drawer-header-left">
+        <div class="drawer-sym-row">
+          <h2>${esc(t.symbol)}</h2>
+          <span class="pill ${t.direction === 'BUY' ? 'buy' : 'sell'}">${t.direction}</span>
+          <span class="pill ${isWin ? 'win' : (isLoss ? 'loss' : 'be')}">${isWin ? 'WIN' : (isLoss ? 'LOSS' : 'BREAKEVEN')}</span>
+        </div>
+        <div class="drawer-meta-sub">Position #${t.position_id || t.id} · Ticket #${t.id} · ${fmtDate(t.open_time)}</div>
+      </div>
+      <div class="drawer-header-actions">
+        <button class="btn btn-sm btn-primary" id="drawer-btn-chart" title="Replay candlestick chart for this trade">📈 Replay Chart</button>
+        <button class="btn btn-sm" id="drawer-close-btn" title="Close (Esc)" aria-label="Close drawer">✕</button>
+      </div>
+    </div>
+
+    <div class="drawer-body">
+      <!-- Financial & R overview strip -->
+      <div class="drawer-kpi-grid">
+        <div class="drawer-kpi-card">
+          <span class="drawer-kpi-lbl">Net Outcome</span>
+          <strong class="drawer-kpi-val ${isWin ? 'win' : (isLoss ? 'loss' : '')}">${sign}${fmtNum(pl)}</strong>
+          <small class="drawer-kpi-sub">${netR}</small>
+        </div>
+        <div class="drawer-kpi-card">
+          <span class="drawer-kpi-lbl">Position Size</span>
+          <strong class="drawer-kpi-val">${fmtVolume(t.volume)} lots</strong>
+          <small class="drawer-kpi-sub">${t.symbol}</small>
+        </div>
+        <div class="drawer-kpi-card">
+          <span class="drawer-kpi-lbl">Initial Risk</span>
+          <strong class="drawer-kpi-val">${t.monetary_risk ? fmtNum(t.monetary_risk) : '—'}</strong>
+          <small class="drawer-kpi-sub">${t.risk_percentage ? t.risk_percentage.toFixed(2) + '% account' : '—'}</small>
+        </div>
+        <div class="drawer-kpi-card">
+          <span class="drawer-kpi-lbl">Planned R:R</span>
+          <strong class="drawer-kpi-val">${t.planned_rr ? t.planned_rr.toFixed(2) + ':1' : '—'}</strong>
+          <small class="drawer-kpi-sub">${t.realized_r !== null ? t.realized_r.toFixed(2) + 'R realized' : '—'}</small>
+        </div>
+      </div>
+
+      <!-- Execution Pricing & Timing -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">Execution Pricing & Timestamps</div>
+        <div class="drawer-two-col">
+          <div class="drawer-field">
+            <span class="drawer-field-lbl">Entry Price</span>
+            <span class="drawer-field-val mono">${fmtNum(t.open_price, 5)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-lbl">Exit Price</span>
+            <span class="drawer-field-val mono">${t.close_price !== null ? fmtNum(t.close_price, 5) : '—'}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-lbl">Initial Stop Loss</span>
+            <span class="drawer-field-val mono ${t.initial_sl ? 'loss' : ''}">${t.initial_sl ? fmtNum(t.initial_sl, 5) : 'None'}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-lbl">Initial Take Profit</span>
+            <span class="drawer-field-val mono ${t.initial_tp ? 'win' : ''}">${t.initial_tp ? fmtNum(t.initial_tp, 5) : 'None'}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-lbl">Opened</span>
+            <span class="drawer-field-val">${fmtDate(t.open_time)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-lbl">Closed</span>
+            <span class="drawer-field-val">${fmtDate(t.close_time)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-lbl">Gross / Swap / Comm</span>
+            <span class="drawer-field-val mono">${fmtNum(t.profit)} / ${fmtNum(t.swap || 0)} / ${fmtNum(t.commission || 0)}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-lbl">Status</span>
+            <span class="drawer-field-val"><span class="pill ${t.status === 'CLOSED' ? 'buy' : 'neutral'}">${t.status || 'CLOSED'}</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Strategy & Compliance -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">Strategy & Rule Compliance</div>
+        <div class="drawer-form-row">
+          <label for="drawer-strat-select">Assigned Strategy:</label>
+          <select id="drawer-strat-select" class="form-select">${stratOptions}</select>
+        </div>
+        <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+          <span>Compliance Assessment:</span>
+          <span class="pill ${(t.compliance_status || 'UNCHECKED').toLowerCase()}">${t.compliance_status || 'UNCHECKED'}</span>
+        </div>
+        ${t.deviation_reason ? `
+          <div class="drawer-alert-box deviation">
+            <strong>⚠️ Rule Deviation:</strong> ${esc(t.deviation_reason)}
+          </div>` : ''}
+        ${t.compliance_details ? `
+          <div class="drawer-compliance-details">
+            <small>${esc(t.compliance_details)}</small>
+          </div>` : ''}
+      </div>
+
+      <!-- Psychology & Behavior -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">Trader Psychology & Discipline Audit</div>
+        <div class="drawer-form-row">
+          <label for="drawer-emotion-select">Emotional State:</label>
+          <select id="drawer-emotion-select" class="form-select">${emotionOptions}</select>
+        </div>
+        ${flagsHtml ? `<div style="margin-top: 10px;">${flagsHtml}</div>` : ''}
+        <div style="margin-top: 12px;">
+          <label for="drawer-notes-input" style="font-size: 11.5px; color: var(--text-dim); display: block; margin-bottom: 4px;">Behavioral Notes & Review:</label>
+          <textarea id="drawer-notes-input" class="drawer-textarea" rows="3" placeholder="Add self-review notes, execution reflections, or mistakes...">${esc(t.behavior_notes || '')}</textarea>
+          <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+            <button class="btn btn-sm btn-primary" id="drawer-save-notes-btn">Save Notes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Order Executions / Deals -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">MT5 Deals & Executions (${deals.length})</div>
+        ${dealsHtml}
+      </div>
+
+      <!-- Lifecycle SL/TP History -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">Stop-Loss Trailing & Modifications</div>
+        ${slHistHtml}
+      </div>
+    </div>
+  `;
+
+  // Attach interactive listeners inside drawer
+  document.getElementById("drawer-close-btn").addEventListener("click", closeTradeDrawer);
+
+  document.getElementById("drawer-btn-chart").addEventListener("click", () => {
+    closeTradeDrawer();
+    state.selectedTradeId = t.id;
+    navigate("trade-chart");
+  });
+
+  const stratSelect = document.getElementById("drawer-strat-select");
+  stratSelect.addEventListener("change", async () => {
+    const val = stratSelect.value ? parseInt(stratSelect.value, 10) : null;
+    try {
+      const res = await apiPost(`/trades/${t.id}/assign-strategy`, { strategy_id: val });
+      const idx = state.trades.findIndex((x) => x.id === t.id);
+      if (idx !== -1 && res.trade) state.trades[idx] = res.trade;
+      renderTradesTable();
+      showTransientBanner("Strategy updated.", true);
+      // Refresh drawer
+      openTradeDrawer(t.id);
+    } catch (err) {
+      showTransientBanner("Failed to assign strategy: " + err.message, false);
+    }
+  });
+
+  const emotionSelect = document.getElementById("drawer-emotion-select");
+  emotionSelect.addEventListener("change", async () => {
+    const val = emotionSelect.value || null;
+    try {
+      await apiPost(`/trades/${t.id}/emotion`, { emotion_tag: val });
+      const tr = state.trades.find((x) => x.id === t.id);
+      if (tr) tr.emotion_tag = val;
+      renderTradesTable();
+      showTransientBanner("Emotion updated.", true);
+    } catch (err) {
+      showTransientBanner("Failed to update emotion: " + err.message, false);
+    }
+  });
+
+  const saveNotesBtn = document.getElementById("drawer-save-notes-btn");
+  saveNotesBtn.addEventListener("click", async () => {
+    const notes = document.getElementById("drawer-notes-input").value;
+    const currentEmotion = emotionSelect.value || null;
+    try {
+      await apiPost(`/trades/${t.id}/emotion`, { emotion_tag: currentEmotion, behavior_notes: notes });
+      const tr = state.trades.find((x) => x.id === t.id);
+      if (tr) {
+        tr.behavior_notes = notes;
+        tr.emotion_tag = currentEmotion;
+      }
+      showTransientBanner("Trade notes saved successfully.", true);
+    } catch (err) {
+      showTransientBanner("Failed to save notes: " + err.message, false);
+    }
+  });
+}

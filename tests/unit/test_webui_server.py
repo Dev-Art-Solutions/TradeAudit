@@ -706,3 +706,65 @@ def test_dashboard_daily_summary_and_underwater_series(client):
     assert day2["net_profit"] == 75.0
     assert day2["net_r"] == 1.5
     assert day2["win_rate"] == 1.0
+
+
+def test_get_trade_detail_with_lifecycle_and_deals(client):
+    from datetime import datetime, timezone
+    from tradeaudit.domain.models import Trade, TradeDeal
+    from tradeaudit.infrastructure.database.models import SLHistoryModel, TradeEventModel
+
+    ctx = client.app.state.tradeaudit_context
+    deal_in = TradeDeal(
+        ticket=9001, account_id=8888, order_ticket=8001, position_id=555, symbol="EURUSD",
+        type="BUY", entry="ENTRY_IN", time=datetime(2026, 4, 1, 10, 0, tzinfo=timezone.utc),
+        volume=1.0, price=1.0850, profit=0.0, commission=-3.5
+    )
+    deal_out = TradeDeal(
+        ticket=9002, account_id=8888, order_ticket=8002, position_id=555, symbol="EURUSD",
+        type="SELL", entry="ENTRY_OUT", time=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+        volume=1.0, price=1.0890, profit=400.0, commission=-3.5
+    )
+    trade = Trade(
+        account_id=8888, position_id=555, symbol="EURUSD", direction="BUY",
+        open_time=datetime(2026, 4, 1, 10, 0, tzinfo=timezone.utc),
+        close_time=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+        open_price=1.0850, close_price=1.0890, initial_sl=1.0820, initial_tp=1.0910,
+        volume=1.0, status="CLOSED", profit=400.0, commission=-7.0, realized_r=2.0,
+        planned_rr=2.0, monetary_risk=200.0, risk_percentage=1.0,
+        compliance_status="COMPLIANT", deals=[deal_in, deal_out]
+    )
+    ctx.trade_repo.save_deals([deal_in, deal_out])
+    saved = ctx.trade_repo.save_trades(8888, [trade])
+    saved_id = saved[0].id
+
+    # Record an SL modification and lifecycle event for position 555
+    with ctx.db_manager.session_scope() as session:
+        session.add(SLHistoryModel(
+            trade_id=saved_id, position_id=555, old_sl=1.0820, new_sl=1.0850,
+            timestamp=datetime(2026, 4, 1, 11, 0, tzinfo=timezone.utc),
+            change_reason="Trailing SL to breakeven"
+        ))
+        session.add(TradeEventModel(
+            trade_id=saved_id, position_id=555, event_type="SL_MODIFIED",
+            timestamp=datetime(2026, 4, 1, 11, 0, tzinfo=timezone.utc),
+            details="SL moved closer to price"
+        ))
+
+    # Fetch trade details via GET /api/trades/{trade_id}
+    res = client.get(f"/api/trades/{saved_id}")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["id"] == saved_id
+    assert data["symbol"] == "EURUSD"
+    assert data["direction"] == "BUY"
+    assert data["realized_r"] == 2.0
+    assert len(data["deals"]) == 2
+    assert len(data["sl_history"]) == 1
+    assert data["sl_history"][0]["new_sl"] == 1.0850
+    assert "Trailing SL" in data["sl_history"][0]["change_reason"]
+    assert len(data["events"]) == 1
+    assert data["events"][0]["event_type"] == "SL_MODIFIED"
+
+    # Test non-existent trade returns 404
+    bad_res = client.get("/api/trades/9999999")
+    assert bad_res.status_code == 404

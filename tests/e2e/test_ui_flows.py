@@ -483,3 +483,35 @@ def test_dashboard_calendar_and_underwater_chart(page, live_server, seeded_trade
     page.wait_for_url(lambda url: "#trades" in url, timeout=10000)
     page.wait_for_selector("#trades-search", timeout=10000)
     assert page.input_value("#trades-search") == "2026-01-01"
+
+
+def test_trades_inspection_drawer(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#trades")
+    page.wait_for_selector(".clickable-row", timeout=15000)
+
+    # Click on the trade row
+    page.click(".clickable-row")
+    page.wait_for_selector("#trade-drawer.active", timeout=10000)
+
+    # Verify drawer content
+    assert page.is_visible("#trade-drawer-panel")
+    assert page.is_visible("#drawer-close-btn")
+    assert page.is_visible("#drawer-btn-chart")
+
+    # Seeded trade is EURUSD BUY
+    assert "EURUSD" in page.text_content("#trade-drawer-panel")
+    assert "BUY" in page.text_content("#trade-drawer-panel")
+    assert page.is_visible("#drawer-strat-select")
+    assert page.is_visible("#drawer-emotion-select")
+    assert page.is_visible("#drawer-notes-input")
+    assert page.is_visible("#drawer-save-notes-btn")
+
+    # Add a note and save
+    page.fill("#drawer-notes-input", "Entered after liquidity sweep on support.")
+    page.click("#drawer-save-notes-btn")
+    page.wait_for_selector("text=Trade notes saved successfully", timeout=5000)
+
+    # Close drawer using close button
+    page.click("#drawer-close-btn")
+    page.wait_for_timeout(300)
+    assert not page.locator("#trade-drawer").is_visible()

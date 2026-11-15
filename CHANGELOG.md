@@ -53,6 +53,11 @@
 - Underwater Drawdown (R) equity curve visualization with crimson depth gradient and high-water mark recovery tracking.
 - Aggregate daily summary engine in `/api/dashboard` computing daily trade frequency, win/loss rates, net monetary outcome, and realized R.
 - Unit and Playwright browser E2E test coverage for dashboard daily summaries, calendar interactions, and underwater drawdown rendering.
+- Slide-over Trade Inspection Drawer in the Trade Ledger revealing deep execution pricing, duration, risk analysis, rule compliance evaluation, and MT5 deals.
+- Position lifecycle modification timeline in the trade drawer showing historical trailing Stop-Loss and Take-Profit adjustments.
+- In-drawer trade reflection notes editor with real-time persistence to behavioral journal storage.
+- Direct jump button from the inspection drawer into interactive candlestick chart replay.
+- Unit and Playwright browser E2E test coverage for trade detail inspection, lifecycle history, and drawer workflows.
 
 ## 1.1.1 — 2026-10-27
 
