@@ -125,10 +125,13 @@ class MarkdownReportGenerator:
     def build_ai_prompt(
         self,
         trades: List[Trade],
-        config: Optional[ReportConfig] = None
+        config: Optional[ReportConfig] = None,
+        persona: Optional[str] = None
     ) -> str:
         """Generate targeted AI audit questions and recommended system prompt."""
         cfg = config or ReportConfig()
+        if persona:
+            cfg.persona = persona
         filtered = FilterEvaluator.apply(trades, cfg.filters)
         closed = [t for t in filtered if t.status and t.status.upper() == "CLOSED"]
         metrics = PerformanceAnalyzer.analyze(closed)
@@ -587,29 +590,82 @@ filters_applied:
         c: StrategyVsTraderComparison,
         config: ReportConfig
     ) -> str:
+        persona_key = (getattr(config, "persona", None) or "quant").lower()
+
+        PERSONAS = {
+            "quant": {
+                "title": "Quantitative Edge & Risk Officer",
+                "questions": [
+                    "1. **Core Edge Diagnosis**: Is my trading edge statistically sound in compliant setups, or am I reliant on high win-rate / low R:R overrides?",
+                    "2. **Cost of Deviations**: How much of my account drawdown is directly attributable to rule violations and behavioral leaks vs. normal strategy variance?",
+                    "3. **Contextual Weaknesses**: Which specific symbols, trading sessions, or post-loss emotional sequences create the highest downside risk?",
+                    "4. **Actionable Remediation Plan**: What 3 concrete discipline rules or risk-management constraints should I enforce immediately to maximize Net R?"
+                ],
+                "prompt": (
+                    "You are an elite quantitative trading coach, institutional risk manager, and behavioral finance auditor.\n"
+                    "Analyze the attached TradeAudit performance report for a MetaTrader 5 trader.\n\n"
+                    "Your objectives:\n"
+                    "1. Separate strategy performance (Compliant trades) from execution discipline (Deviations / Emotional trades).\n"
+                    "2. Quantify the exact financial impact of deviations (Deviation Cost R).\n"
+                    "3. Identify behavioral leakage patterns (revenge trading, FOMO, overtrading, widening SL).\n"
+                    "4. Deliver an uncompromising, constructive audit with a prioritized 3-step action plan to improve Expectancy."
+                )
+            },
+            "prop_firm": {
+                "title": "Prop Firm Challenge & Evaluation Auditor",
+                "questions": [
+                    "1. **Drawdown Breach Risk**: What is the maximum daily and trailing drawdown observed, and what is the statistical probability of breaching a 5% daily / 10% max limit based on my loss streaks?",
+                    "2. **Consistency Score**: Are my profits overly clustered in 1-2 outlier trades, or is the gain distributed evenly across compliant setups?",
+                    "3. **Martingale & Risk Escalation**: Did lot sizes or risk escalate after losses, endangering the evaluation account rules?",
+                    "4. **Challenge Action Plan**: What lot-sizing ceiling and maximum daily trade stop should I lock in to pass a 2-step evaluation with 95% confidence?"
+                ],
+                "prompt": (
+                    "You are a strict Prop Firm Risk Auditor and Evaluation Officer specializing in FTMO, FundedNext, and institutional evaluation guidelines.\n"
+                    "Audit the attached TradeAudit report for a trader preparing for or trading a funded challenge account.\n\n"
+                    "Your objectives:\n"
+                    "1. Stress-test maximum daily drawdown and trailing loss against strict 5% daily / 10% maximum drawdown limits.\n"
+                    "2. Evaluate consistency rules: assess whether any single trade generates > 30% of total profit.\n"
+                    "3. Audit lot sizing and risk escalation: flag any revenge trading, Martingale lot doubling, or weekend holding risks.\n"
+                    "4. Provide a fail-safe risk parameter rule sheet (max lots, max daily trades, hard stop per day)."
+                )
+            },
+            "psychology": {
+                "title": "Trading Psychologist & Discipline Mentor",
+                "questions": [
+                    "1. **Emotional Degradation Cycle**: How significantly does my win rate and average R drop after taking a loss or entering a drawdown streak?",
+                    "2. **Loss Aversion & SL Widening**: Is there evidence of moving stop-losses away or holding losers too long compared to cutting them systematically?",
+                    "3. **FOMO & Impulsive Entries**: Which session or market condition triggers the majority of impulsive unverified trades?",
+                    "4. **Mindset Protocol**: What pre-session ritual and post-loss circuit breaker rule should I implement to prevent emotional tilt?"
+                ],
+                "prompt": (
+                    "You are a specialized Performance Psychologist and Trading Discipline Mentor inspired by Mark Douglas and Jared Tendler.\n"
+                    "Review the attached TradeAudit journal dossier focusing on emotional regulation and execution psychology.\n\n"
+                    "Your objectives:\n"
+                    "1. Analyze emotional tags and behavioral flags (FOMO, Revenge, Greed, Fear) to find the primary psychological leak.\n"
+                    "2. Identify the emotional degradation sequence: calculate the performance delta on trades executed within 60 minutes of a losing trade.\n"
+                    "3. Diagnose cognitive biases: loss aversion (moving SL), gambler's fallacy (increasing risk during streaks), and outcome bias.\n"
+                    "4. Build an actionable 3-part psychological circuit breaker to halt tilt before capital is damaged."
+                )
+            }
+        }
+
+        persona = PERSONAS.get(persona_key, PERSONAS["quant"])
+
         lines = [
-            "## 10. Targeted AI Audit Questions",
+            f"## 10. Targeted AI Audit Questions ({persona['title']})",
             "",
             "Please paste this entire report into ChatGPT, Claude, or your LLM of choice, and ask:",
-            "",
-            "1. **Core Edge Diagnosis**: Is my trading edge statistically sound in compliant setups, or am I reliant on high win-rate / low R:R overrides?",
-            "2. **Cost of Deviations**: How much of my account drawdown is directly attributable to rule violations and behavioral leaks vs. normal strategy variance?",
-            "3. **Contextual Weaknesses**: Which specific symbols, trading sessions, or post-loss emotional sequences create the highest downside risk?",
-            "4. **Actionable Remediation Plan**: What 3 concrete discipline rules or risk-management constraints should I enforce immediately to maximize Net R?",
+            ""
+        ]
+        lines.extend(persona["questions"])
+        lines.extend([
             "",
             "---",
             "",
-            "## 🤖 Suggested System Prompt for AI Analysis",
+            f"## 🤖 Suggested System Prompt for AI Analysis ({persona['title']})",
             "",
             "```text",
-            "You are an elite quantitative trading coach, institutional risk manager, and behavioral finance auditor.",
-            "Analyze the attached TradeAudit performance report for a MetaTrader 5 trader.",
-            "",
-            "Your objectives:",
-            "1. Separate strategy performance (Compliant trades) from execution discipline (Deviations / Emotional trades).",
-            "2. Quantify the exact financial impact of deviations (Deviation Cost R).",
-            "3. Identify behavioral leakage patterns (revenge trading, FOMO, overtrading, widening SL).",
-            "4. Deliver an uncompromising, constructive audit with a prioritized 3-step action plan to improve Expectancy.",
+            persona["prompt"],
             "```"
-        ]
+        ])
         return "\n".join(lines)

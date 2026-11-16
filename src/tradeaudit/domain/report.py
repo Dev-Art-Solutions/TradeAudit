@@ -31,5 +31,6 @@ class ReportConfig:
     export_type: ExportType = ExportType.STANDARD
     filters: AnalysisFilter = field(default_factory=AnalysisFilter)
     privacy: PrivacyOptions = field(default_factory=PrivacyOptions)
+    persona: str = "quant"
     app_version: str = "0.1.0"
     report_version: int = 1

@@ -5,6 +5,7 @@ service/domain/infrastructure layers - no business logic lives here.
 import base64
 import binascii
 import csv
+import re
 import io
 import logging
 import secrets
@@ -617,6 +618,7 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         mask_account: bool = Query(default=True),
         hide_broker: bool = Query(default=True),
         mask_tickets: bool = Query(default=True),
+        persona: str = Query(default="quant"),
     ):
         trades, _ = closed_trades()
         strategies = {s.id: s for s in ctx.strategy_service.get_all_strategies() if s.id is not None}
@@ -659,16 +661,18 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
             export_type=exp_type,
             filters=filters,
             privacy=privacy,
+            persona=persona,
             app_version=ctx.settings.app_version,
         )
         markdown = ctx.report_generator.generate(
             trades=trades, config=config, account_info=account_info, strategies=strategies
         )
-        ai_prompt = ctx.report_generator.build_ai_prompt(trades=trades, config=config)
+        ai_prompt = ctx.report_generator.build_ai_prompt(trades=trades, config=config, persona=persona)
         return {
             "markdown": markdown,
             "export_type": exp_type.value,
             "ai_prompt": ai_prompt,
+            "persona": persona,
             "filters": {
                 "period": period_preset.value,
                 "symbol": symbol or "ALL",
@@ -681,6 +685,199 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
                 "mask_tickets": mask_tickets,
             },
         }
+
+    def _build_standalone_report_html(markdown_text: str, title: str, app_version: str, persona: str) -> str:
+        # Simple markdown to HTML conversion for standalone viewing and printing
+        import html as pyhtml
+        lines = markdown_text.splitlines()
+        body_parts = []
+        in_table = False
+        table_rows = []
+        in_code = False
+        code_lines = []
+
+        def flush_table():
+            nonlocal in_table, table_rows
+            if not in_table or not table_rows:
+                return
+            t_html = ['<div class="table-wrap"><table>']
+            is_head = True
+            for r in table_rows:
+                if re.match(r"^\|(\s*:?-+:?\s*\|)+$", r.strip()):
+                    is_head = False
+                    continue
+                cells = [c.strip() for c in r.split("|")[1:-1]]
+                tag = "th" if is_head else "td"
+                cells_html = "".join(f"<{tag}>{pyhtml.escape(c)}</{tag}>" for c in cells)
+                t_html.append(f"<tr>{cells_html}</tr>")
+            t_html.append("</table></div>")
+            body_parts.append("\n".join(t_html))
+            in_table = False
+            table_rows = []
+
+        for line in lines:
+            sline = line.strip()
+            if sline.startswith("```"):
+                if in_table:
+                    flush_table()
+                if in_code:
+                    code_content = pyhtml.escape("\n".join(code_lines))
+                    body_parts.append(f"<pre><code>{code_content}</code></pre>")
+                    in_code = False
+                    code_lines = []
+                else:
+                    in_code = True
+                    code_lines = []
+                continue
+
+            if in_code:
+                code_lines.append(line)
+                continue
+
+            if sline.startswith("|") and sline.endswith("|"):
+                in_table = True
+                table_rows.append(sline)
+                continue
+            elif in_table:
+                flush_table()
+
+            if sline.startswith("# "):
+                body_parts.append(f"<h1>{pyhtml.escape(sline[2:])}</h1>")
+            elif sline.startswith("## "):
+                body_parts.append(f"<h2>{pyhtml.escape(sline[3:])}</h2>")
+            elif sline.startswith("### "):
+                body_parts.append(f"<h3>{pyhtml.escape(sline[4:])}</h3>")
+            elif sline.startswith("- "):
+                body_parts.append(f"<li>{pyhtml.escape(sline[2:])}</li>")
+            elif sline.startswith("---"):
+                body_parts.append("<hr />")
+            elif sline:
+                body_parts.append(f"<p>{pyhtml.escape(sline)}</p>")
+
+        if in_table:
+            flush_table()
+        if in_code:
+            code_content = pyhtml.escape("\n".join(code_lines))
+            body_parts.append(f"<pre><code>{code_content}</code></pre>")
+
+        body_html = "\n".join(body_parts)
+
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{pyhtml.escape(title)}</title>
+  <style>
+    :root {{
+      --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3;
+      --text-dim: #8b949e; --accent: #58a6ff; --win: #26a69a; --loss: #ef5350;
+    }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.6; margin: 0; padding: 32px 24px;
+    }}
+    .container {{ max-width: 980px; margin: 0 auto; }}
+    h1 {{ font-size: 24px; border-bottom: 2px solid var(--border); padding-bottom: 8px; color: var(--accent); }}
+    h2 {{ font-size: 18px; margin-top: 24px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }}
+    h3 {{ font-size: 15px; margin-top: 18px; color: var(--text-dim); }}
+    p, li {{ font-size: 13.5px; color: var(--text); }}
+    pre {{ background: #010409; border: 1px solid var(--border); border-radius: 6px; padding: 14px; overflow-x: auto; }}
+    code {{ font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; color: #79c0ff; }}
+    .table-wrap {{ overflow-x: auto; margin: 16px 0; border: 1px solid var(--border); border-radius: 6px; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
+    th, td {{ padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }}
+    th {{ background: var(--panel); color: var(--text-dim); font-size: 11px; text-transform: uppercase; }}
+    hr {{ border: none; border-top: 1px solid var(--border); margin: 24px 0; }}
+    .report-footer {{ margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-dim); display: flex; justify-content: space-between; }}
+    @media print {{
+      body {{ background: #fff !important; color: #111 !important; padding: 0 !important; }}
+      h1, h2, h3 {{ color: #111 !important; border-color: #ccc !important; }}
+      p, li, td, th {{ color: #111 !important; }}
+      pre, code {{ background: #f6f8fa !important; color: #111 !important; border-color: #ddd !important; }}
+      table, th, td, .table-wrap {{ border-color: #ddd !important; }}
+      th {{ background: #eee !important; }}
+      .report-footer {{ border-color: #ccc !important; color: #666 !important; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    {body_html}
+    <div class="report-footer">
+      <span>Generated by TradeAudit v{pyhtml.escape(app_version)}</span>
+      <span>AI Persona Angle: {pyhtml.escape(persona.capitalize())}</span>
+    </div>
+  </div>
+</body>
+</html>"""
+
+    @app.get("/api/report/export-html")
+    def export_report_html(
+        export_type: str = Query(default="Standard"),
+        period: str = Query(default="ALL_TIME"),
+        symbol: Optional[str] = Query(default=None),
+        strategy_id: Optional[int] = Query(default=None),
+        compliance: Optional[str] = Query(default=None),
+        mask_account: bool = Query(default=True),
+        hide_broker: bool = Query(default=True),
+        mask_tickets: bool = Query(default=True),
+        persona: str = Query(default="quant"),
+    ):
+        trades, _ = closed_trades()
+        strategies = {s.id: s for s in ctx.strategy_service.get_all_strategies() if s.id is not None}
+        account_info = None
+        if ctx.mt5_service.is_connected():
+            try:
+                account_info = ctx.mt5_service.get_account_info()
+            except Exception:
+                account_info = None
+
+        normalized_export = export_type.strip().capitalize()
+        try:
+            exp_type = ExportType(normalized_export)
+        except ValueError:
+            exp_type = ExportType.STANDARD
+
+        try:
+            period_preset = PeriodPreset(period.strip().upper())
+        except ValueError:
+            period_preset = PeriodPreset.ALL_TIME
+
+        symbols_list = [symbol.strip().upper()] if symbol and symbol.strip().upper() != "ALL" else []
+        comp_status = compliance.strip().upper() if compliance and compliance.strip().upper() != "ALL" else None
+
+        filters = AnalysisFilter(
+            period=period_preset,
+            symbols=symbols_list,
+            strategy_id=strategy_id,
+            compliance_status=comp_status,
+        )
+        privacy = PrivacyOptions(
+            mask_account_number=mask_account,
+            hide_broker=hide_broker,
+            mask_tickets=mask_tickets,
+        )
+        config = ReportConfig(
+            export_type=exp_type,
+            filters=filters,
+            privacy=privacy,
+            persona=persona,
+            app_version=ctx.settings.app_version,
+        )
+        markdown = ctx.report_generator.generate(
+            trades=trades, config=config, account_info=account_info, strategies=strategies
+        )
+
+        title = f"TradeAudit {exp_type.value} Audit Dossier"
+        html_doc = _build_standalone_report_html(markdown, title, ctx.settings.app_version, persona)
+        filename = f"tradeaudit-dossier-{persona}-{exp_type.value.lower()}-{datetime.now().strftime('%Y%m%d')}.html"
+        return Response(
+            content=html_doc,
+            media_type="text/html",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
 
     # ------------------------------------------------------------ live journal
 

@@ -319,10 +319,17 @@ def test_reports_view_generation_and_export_controls(page, live_server, seeded_t
     assert page.input_value("#sel-report-depth") == "Standard"
     page.select_option("#sel-report-depth", "Summary")
 
+    # Verify persona selector defaults to quant and can select prop_firm
+    page.wait_for_selector("#sel-report-persona")
+    assert page.input_value("#sel-report-persona") == "quant"
+    page.select_option("#sel-report-persona", "prop_firm")
+
     page.click("#btn-gen-report")
     page.wait_for_selector("#btn-copy-prompt:not([style*='none'])", timeout=10000)
     page.wait_for_selector("#btn-copy-report:not([style*='none'])", timeout=10000)
     page.wait_for_selector("#btn-download-report:not([style*='none'])", timeout=10000)
+    page.wait_for_selector("#btn-download-html:not([style*='none'])", timeout=10000)
+    page.wait_for_selector("#btn-print-report:not([style*='none'])", timeout=10000)
 
     report_text = page.text_content("#report-box")
     assert "TradeAudit" in report_text

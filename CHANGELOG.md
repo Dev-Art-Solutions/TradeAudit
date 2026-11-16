@@ -4,6 +4,10 @@
 
 ### Added
 
+- AI Report Persona selection in the audit dossier generator with three specialized evaluation frameworks: Quant & Risk Officer (`quant`), Prop Firm Auditor (`prop_firm`), and Psychology Coach (`psychology`).
+- Standalone HTML dossier export (`GET /api/report/export-html`) with embedded dark theme styles, formatted tables, metric cards, and `@media print` layout.
+- Native browser print and PDF export button in AI Reports providing zero-dependency clean document printing without sidebars or toolbars.
+
 - Audit Data Quality scoring across risk, stop-loss, strategy-compliance, timing, and trader-review evidence.
 - Prioritized dashboard recommendations for incomplete datasets.
 - Unit and browser regression coverage for the new quality contract and visualization.

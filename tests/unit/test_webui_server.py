@@ -768,3 +768,43 @@ def test_get_trade_detail_with_lifecycle_and_deals(client):
     # Test non-existent trade returns 404
     bad_res = client.get("/api/trades/9999999")
     assert bad_res.status_code == 404
+
+
+def test_report_endpoint_supports_ai_personas(client, existing_trade_id):
+    # Quant persona (default)
+    quant_res = client.get("/api/report?persona=quant")
+    assert quant_res.status_code == 200
+    quant_data = quant_res.json()
+    assert quant_data.get("persona") == "quant"
+    assert "Quantitative Edge & Risk Officer" in quant_data["ai_prompt"]
+
+    # Prop Firm persona
+    prop_res = client.get("/api/report?persona=prop_firm")
+    assert prop_res.status_code == 200
+    prop_data = prop_res.json()
+    assert prop_data.get("persona") == "prop_firm"
+    assert "Prop Firm Challenge & Evaluation Auditor" in prop_data["ai_prompt"]
+    assert "5% daily / 10% maximum" in prop_data["ai_prompt"]
+
+    # Psychology persona
+    psych_res = client.get("/api/report?persona=psychology")
+    assert psych_res.status_code == 200
+    psych_data = psych_res.json()
+    assert psych_data.get("persona") == "psychology"
+    assert "Trading Psychologist & Discipline Mentor" in psych_data["ai_prompt"]
+    assert "psychological circuit breaker" in psych_data["ai_prompt"]
+    assert "tilt" in psych_data["ai_prompt"]
+
+
+def test_report_export_html_endpoint(client, existing_trade_id):
+    # Standalone HTML export
+    res = client.get("/api/report/export-html?persona=prop_firm&export_type=Standard")
+    assert res.status_code == 200
+    assert "text/html" in res.headers["content-type"]
+    assert 'tradeaudit-dossier-prop_firm-standard' in res.headers.get("content-disposition", "")
+    html_text = res.text
+    assert "<!DOCTYPE html>" in html_text
+    assert "TradeAudit Standard Audit Dossier" in html_text
+    assert "@media print" in html_text
+    assert "Executive Summary" in html_text
+    assert "Prop Firm" in html_text

@@ -3060,6 +3060,7 @@ let currentReportData = {
   depth: "Standard",
   period: "ALL_TIME",
   symbol: "ALL",
+  persona: "quant",
 };
 
 async function viewReports() {
@@ -3100,6 +3101,15 @@ async function viewReports() {
         </div>
 
         <div style="display:flex;align-items:center;gap:6px">
+          <label for="sel-report-persona" style="margin:0;font-size:12px;color:var(--text-dim)">AI Persona:</label>
+          <select id="sel-report-persona" style="width:auto;padding:5px 8px;font-size:12px">
+            <option value="quant" selected>🧠 Quant Edge & Risk</option>
+            <option value="prop_firm">💼 Prop Firm Auditor</option>
+            <option value="psychology">🧘 Discipline & Psychology</option>
+          </select>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:6px">
           <label style="margin:0;font-size:12px;color:var(--text-dim);cursor:pointer;display:inline-flex;align-items:center;gap:4px">
             <input type="checkbox" id="chk-report-anonymize" checked /> Anonymize
           </label>
@@ -3120,6 +3130,8 @@ async function viewReports() {
         <button class="btn btn-sm" id="btn-copy-prompt" style="display:none">🤖 Copy AI Prompt</button>
         <button class="btn btn-sm" id="btn-copy-report" style="display:none">📋 Copy Report</button>
         <button class="btn btn-sm" id="btn-download-report" style="display:none">💾 Download .md</button>
+        <button class="btn btn-sm" id="btn-download-html" style="display:none">🌐 Download .html</button>
+        <button class="btn btn-sm" id="btn-print-report" style="display:none">🖨️ Print / PDF</button>
       </div>
     </div>
 
@@ -3164,21 +3176,26 @@ async function viewReports() {
     document.getElementById("btn-copy-prompt").style.display = "none";
     document.getElementById("btn-copy-report").style.display = "none";
     document.getElementById("btn-download-report").style.display = "none";
+    document.getElementById("btn-download-html").style.display = "none";
+    document.getElementById("btn-print-report").style.display = "none";
 
     const depth = document.getElementById("sel-report-depth").value;
     const period = document.getElementById("sel-report-period").value;
     const symbol = document.getElementById("sel-report-symbol").value;
+    const persona = document.getElementById("sel-report-persona").value;
     const anonymize = document.getElementById("chk-report-anonymize").checked;
 
     currentReportData.depth = depth;
     currentReportData.period = period;
     currentReportData.symbol = symbol;
+    currentReportData.persona = persona;
 
     try {
       const qs = new URLSearchParams({
         export_type: depth,
         period: period,
         symbol: symbol,
+        persona: persona,
         mask_account: anonymize ? "true" : "false",
         hide_broker: anonymize ? "true" : "false",
         mask_tickets: anonymize ? "true" : "false",
@@ -3193,6 +3210,8 @@ async function viewReports() {
       document.getElementById("btn-copy-prompt").style.display = "inline-flex";
       document.getElementById("btn-copy-report").style.display = "inline-flex";
       document.getElementById("btn-download-report").style.display = "inline-flex";
+      document.getElementById("btn-download-html").style.display = "inline-flex";
+      document.getElementById("btn-print-report").style.display = "inline-flex";
     } catch (e) {
       document.getElementById("report-rendered").innerHTML = `<span class="loss">Error: ${esc(e.message)}</span>`;
       document.getElementById("report-box").textContent = "Error: " + e.message;
@@ -3233,6 +3252,49 @@ async function viewReports() {
     link.remove();
     URL.revokeObjectURL(url);
     showTransientBanner("Markdown audit report downloaded.", true);
+  });
+
+  document.getElementById("btn-download-html").addEventListener("click", async () => {
+    const depth = (currentReportData.depth || "standard").toLowerCase();
+    const sym = (currentReportData.symbol || "all").toLowerCase();
+    const persona = (currentReportData.persona || "quant").toLowerCase();
+    const anonymize = document.getElementById("chk-report-anonymize") ? document.getElementById("chk-report-anonymize").checked : true;
+    const period = currentReportData.period || "ALL_TIME";
+
+    const qs = new URLSearchParams({
+      export_type: currentReportData.depth || "Standard",
+      period: period,
+      symbol: currentReportData.symbol || "ALL",
+      persona: persona,
+      mask_account: anonymize ? "true" : "false",
+      hide_broker: anonymize ? "true" : "false",
+      mask_tickets: anonymize ? "true" : "false",
+    });
+
+    try {
+      const resp = await fetch(`/api/report/export-html?${qs.toString()}`);
+      if (!resp.ok) throw new Error("Failed to export HTML dossier");
+      const htmlContent = await resp.text();
+      const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `tradeaudit-dossier-${persona}-${depth}-${sym}-${new Date().toISOString().slice(0, 10)}.html`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showTransientBanner("Standalone HTML dossier downloaded.", true);
+    } catch (e) {
+      showTransientBanner("Failed to download HTML dossier: " + e.message, false);
+    }
+  });
+
+  document.getElementById("btn-print-report").addEventListener("click", () => {
+    if (viewMode !== "formatted") {
+      setViewMode("formatted");
+    }
+    window.print();
   });
 }
 
