@@ -77,6 +77,14 @@ class TradeEmotionPayload(BaseModel):
     behavior_notes: Optional[str] = Field(default=None, max_length=10000)
 
 
+class BulkTradeUpdatePayload(BaseModel):
+    trade_ids: List[int] = Field(min_length=1, max_length=1000)
+    strategy_id: Optional[int] = None
+    update_strategy: bool = False
+    emotion_tag: Optional[str] = None
+    update_emotion: bool = False
+
+
 class JournalNotePayload(BaseModel):
     setup_name: str = Field(default="", max_length=255)
     rating: str = Field(default="A", max_length=8)
@@ -472,6 +480,41 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
             behavior_notes=payload.behavior_notes,
         )
         return {"ok": ok}
+
+    @app.post("/api/trades/bulk-update")
+    def bulk_update_trades(payload: BulkTradeUpdatePayload):
+        account_id = ctx.current_login()
+        if not account_id:
+            with ctx.db_manager.session_scope() as session:
+                tm = session.query(TradeModel).filter(TradeModel.id.in_(payload.trade_ids)).first()
+                if tm:
+                    account_id = tm.account_id
+        if not account_id:
+            raise HTTPException(status_code=400, detail="No MT5 account context found for trade selection.")
+
+        updated_strategy_trades = []
+        if payload.update_strategy:
+            updated_strategy_trades = ctx.strategy_service.bulk_assign_strategy_to_trades(
+                account_id=account_id,
+                trade_ids=payload.trade_ids,
+                strategy_id=payload.strategy_id,
+            )
+
+        updated_emotion_count = 0
+        if payload.update_emotion:
+            clear_emotion = payload.emotion_tag is None or payload.emotion_tag == ""
+            updated_emotion_count = ctx.behavior_service.bulk_update_emotion_tags(
+                trade_ids=payload.trade_ids,
+                emotion_tag=payload.emotion_tag,
+                clear_emotion=clear_emotion,
+            )
+
+        return {
+            "ok": True,
+            "trade_ids": payload.trade_ids,
+            "strategy_updated_count": len(updated_strategy_trades),
+            "emotion_updated_count": updated_emotion_count,
+        }
 
     @app.post("/api/behavior/analyze")
     def run_behavior_analysis():

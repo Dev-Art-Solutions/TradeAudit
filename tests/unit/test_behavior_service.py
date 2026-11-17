@@ -134,3 +134,31 @@ def test_run_behavior_analysis_for_account(behavior_service, repository):
     assert len(trade2_fetched.auto_behavior_flags) > 0
     flag_types = [f.flag_type for f in trade2_fetched.auto_behavior_flags]
     assert BehaviorFlagType.POSSIBLE_REVENGE_TRADE in flag_types
+
+
+def test_bulk_update_emotion_tags(behavior_service, repository):
+    account_id = 999
+    trade1 = Trade(account_id=account_id, position_id=301, open_time=datetime.now(timezone.utc), profit=10.0, status="CLOSED")
+    trade2 = Trade(account_id=account_id, position_id=302, open_time=datetime.now(timezone.utc), profit=-10.0, status="CLOSED")
+    saved = repository.save_trades(account_id, [trade1, trade2])
+    t1_id, t2_id = saved[0].id, saved[1].id
+
+    # Bulk update to FOMO
+    count = behavior_service.bulk_update_emotion_tags([t1_id, t2_id], emotion_tag="FOMO")
+    assert count == 2
+
+    trades = {t.id: t for t in repository.get_trades(account_id)}
+    assert trades[t1_id].emotion_tag == "FOMO"
+    assert trades[t2_id].emotion_tag == "FOMO"
+
+    # Bulk clear emotion
+    count_clear = behavior_service.bulk_update_emotion_tags([t1_id, t2_id], emotion_tag=None, clear_emotion=True)
+    assert count_clear == 2
+
+    trades_after = {t.id: t for t in repository.get_trades(account_id)}
+    assert trades_after[t1_id].emotion_tag is None
+    assert trades_after[t2_id].emotion_tag is None
+
+    # Invalid tag returns 0
+    bad_count = behavior_service.bulk_update_emotion_tags([t1_id, t2_id], emotion_tag="NOT_AN_EMOTION")
+    assert bad_count == 0

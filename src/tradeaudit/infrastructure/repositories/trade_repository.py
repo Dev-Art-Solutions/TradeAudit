@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import List, Optional
+from typing import List, Optional, Sequence
 from datetime import datetime, timezone
 
 from tradeaudit.infrastructure.database.connection import DatabaseManager
@@ -337,6 +337,25 @@ class TradeRepository:
 
             logger.info("Updated behavioral metadata for trade ID %s", trade_id)
             return True
+
+    def update_trades_behavior_bulk(
+        self,
+        trade_ids: Sequence[int],
+        emotion_tag: Optional[str] = None,
+        clear_emotion: bool = False,
+    ) -> int:
+        """Update behavioral metadata for multiple trades in a single transaction."""
+        if not trade_ids:
+            return 0
+        with self.db_manager.session_scope() as session:
+            trades = session.query(TradeModel).filter(TradeModel.id.in_(trade_ids)).all()
+            for tm in trades:
+                if clear_emotion:
+                    tm.emotion_tag = None
+                elif emotion_tag is not None:
+                    tm.emotion_tag = emotion_tag
+            logger.info("Bulk updated behavioral metadata for %d trades", len(trades))
+            return len(trades)
 
     def update_sync_state(self, account_id: int, sync_time: datetime, deals_count: int, trades_count: int) -> None:
         """Update synchronization metadata checkpoint."""

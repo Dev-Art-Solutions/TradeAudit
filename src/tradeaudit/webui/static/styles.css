@@ -542,6 +542,45 @@ canvas.chart-canvas { width: 100%; height: 220px; display: block; }
   transition: background 0.15s ease;
 }
 
+/* ---------- bulk actions toolbar ---------- */
+
+.bulk-actions-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: rgba(88, 166, 255, 0.08);
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  border-radius: 8px;
+  padding: 8px 14px;
+  margin-bottom: 12px;
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.bulk-badge {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bulk-action-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chk-trade-row,
+#chk-select-all-trades {
+  cursor: pointer;
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  vertical-align: middle;
+}
+
 /* emotion & flag pills */
 .pill.calm { background: rgba(38,166,154,0.15); color: var(--win); }
 .pill.fomo { background: rgba(210,153,34,0.2); color: var(--warn); }

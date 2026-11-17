@@ -4,6 +4,9 @@
 
 ### Added
 
+- Batch trade editing suite in the Trades ledger with multi-selection checkboxes, select-all toggle, and floating bulk action toolbar.
+- Bulk strategy assignment and automatic compliance re-evaluation endpoint (`POST /api/trades/bulk-update`) processing batch updates in a single atomic transaction.
+- Bulk emotion tagging and unassignment controls allowing traders to rapidly journal multiple trades simultaneously.
 - AI Report Persona selection in the audit dossier generator with three specialized evaluation frameworks: Quant & Risk Officer (`quant`), Prop Firm Auditor (`prop_firm`), and Psychology Coach (`psychology`).
 - Standalone HTML dossier export (`GET /api/report/export-html`) with embedded dark theme styles, formatted tables, metric cards, and `@media print` layout.
 - Native browser print and PDF export button in AI Reports providing zero-dependency clean document printing without sidebars or toolbars.

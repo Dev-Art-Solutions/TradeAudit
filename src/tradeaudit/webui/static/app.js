@@ -50,6 +50,7 @@ let state = {
   api: null,
   hasAccount: false,
   selectedTradeId: null,
+  selectedTradeIds: new Set(),
   tradeFilter: {
     search: "",
     direction: "ALL",
@@ -681,6 +682,7 @@ async function viewTrades() {
         <option value="BOREDOM" ${state.tradeFilter.emotion === "BOREDOM" ? "selected" : ""}>🥱 Boredom</option>
       </select>
     </div>
+    <div id="trades-bulk-container"></div>
     <div id="trades-body"></div>
     <div id="trade-drawer" class="trade-drawer" role="dialog" aria-modal="true" aria-hidden="true">
       <div class="trade-drawer-backdrop" id="trade-drawer-backdrop"></div>
@@ -829,6 +831,97 @@ function renderTradesTable() {
     state.tradeFilter.dateRange !== "ALL" ||
     Boolean(state.tradeFilter.search);
 
+  if (!state.selectedTradeIds) state.selectedTradeIds = new Set();
+
+  const bulkContainer = document.getElementById("trades-bulk-container");
+  if (bulkContainer) {
+    if (state.selectedTradeIds.size > 0) {
+      const stratsOptions = state.strategies.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
+      bulkContainer.innerHTML = `
+        <div class="bulk-actions-toolbar" id="bulk-actions-toolbar">
+          <div class="bulk-badge">
+            <span>☑️</span> <span id="bulk-selected-count">${state.selectedTradeIds.size}</span> trades selected
+          </div>
+          <div class="bulk-action-group">
+            <select id="bulk-sel-strategy" class="table-select" style="max-width:180px">
+              <option value="">-- Assign Strategy --</option>
+              <option value="CLEAR">None (Unassign)</option>
+              ${stratsOptions}
+            </select>
+            <button class="btn btn-sm btn-primary" id="btn-bulk-apply-strategy">Apply Strategy</button>
+          </div>
+          <div class="bulk-action-group">
+            <select id="bulk-sel-emotion" class="table-select" style="max-width:160px">
+              <option value="">-- Tag Emotion --</option>
+              <option value="CLEAR">None (Clear Emotion)</option>
+              <option value="CALM">😌 Calm</option>
+              <option value="FOMO">⚡ FOMO</option>
+              <option value="REVENGE">🔥 Revenge</option>
+              <option value="GREED">🤑 Greed</option>
+              <option value="FEAR">😨 Fear</option>
+              <option value="BOREDOM">🥱 Boredom</option>
+            </select>
+            <button class="btn btn-sm btn-primary" id="btn-bulk-apply-emotion">Apply Emotion</button>
+          </div>
+          <button class="btn btn-sm btn-subtle" id="btn-bulk-clear-selection" style="margin-left:auto">Deselect All</button>
+        </div>
+      `;
+
+      document.getElementById("btn-bulk-clear-selection").addEventListener("click", () => {
+        state.selectedTradeIds.clear();
+        renderTradesTable();
+      });
+
+      document.getElementById("btn-bulk-apply-strategy").addEventListener("click", async () => {
+        const val = document.getElementById("bulk-sel-strategy").value;
+        if (!val) {
+          showTransientBanner("Please select a strategy to apply.", false);
+          return;
+        }
+        const strategyId = val === "CLEAR" ? null : parseInt(val, 10);
+        const tradeIds = Array.from(state.selectedTradeIds);
+        try {
+          const res = await apiPost("/trades/bulk-update", {
+            trade_ids: tradeIds,
+            strategy_id: strategyId,
+            update_strategy: true,
+          });
+          showTransientBanner(`Assigned strategy to ${res.strategy_updated_count} trades.`, true);
+          state.selectedTradeIds.clear();
+          await loadTrades();
+          renderTradesTable();
+        } catch (e) {
+          showTransientBanner("Failed to bulk assign strategy: " + e.message, false);
+        }
+      });
+
+      document.getElementById("btn-bulk-apply-emotion").addEventListener("click", async () => {
+        const val = document.getElementById("bulk-sel-emotion").value;
+        if (!val) {
+          showTransientBanner("Please select an emotion tag to apply.", false);
+          return;
+        }
+        const emotionTag = val === "CLEAR" ? "" : val;
+        const tradeIds = Array.from(state.selectedTradeIds);
+        try {
+          const res = await apiPost("/trades/bulk-update", {
+            trade_ids: tradeIds,
+            emotion_tag: emotionTag,
+            update_emotion: true,
+          });
+          showTransientBanner(`Tagged emotion on ${res.emotion_updated_count} trades.`, true);
+          state.selectedTradeIds.clear();
+          await loadTrades();
+          renderTradesTable();
+        } catch (e) {
+          showTransientBanner("Failed to bulk update emotion: " + e.message, false);
+        }
+      });
+    } else {
+      bulkContainer.innerHTML = "";
+    }
+  }
+
   const kpiStripHtml = `
     <div class="trades-kpi-strip">
       <div class="kpi-mini-card"><span class="kpi-mini-label">Filtered Trades:</span><b>${filtered.length}</b></div>
@@ -867,8 +960,12 @@ function renderTradesTable() {
     const compStatus = (t.compliance_status || "unchecked").toLowerCase();
     const compTitle = t.deviation_reason ? `Deviation: ${esc(t.deviation_reason)}` : "";
 
+    const isSelected = state.selectedTradeIds && state.selectedTradeIds.has(t.id);
     return `
       <tr class="clickable-row" data-trade-id="${t.id}" title="Click to view detailed execution audit">
+        <td style="text-align:center;width:36px" class="chk-col" onclick="event.stopPropagation()">
+          <input type="checkbox" class="chk-trade-row" data-trade-id="${t.id}" ${isSelected ? "checked" : ""} aria-label="Select trade ${t.id}" />
+        </td>
         <td><b>${esc(t.symbol)}</b></td>
         <td><span class="pill ${t.direction === "BUY" ? "buy" : "sell"}">${t.direction}</span></td>
         <td class="mono">${fmtVolume(t.volume)}</td>
@@ -899,6 +996,9 @@ function renderTradesTable() {
     <div class="table-wrap">
       <table>
         <thead><tr>
+          <th style="width:36px;text-align:center">
+            <input type="checkbox" id="chk-select-all-trades" title="Select or deselect all visible trades" aria-label="Select all visible trades" />
+          </th>
           ${sortHeader("Symbol", "symbol")}
           <th>Dir</th>
           ${sortHeader("Volume", "volume")}
@@ -917,6 +1017,33 @@ function renderTradesTable() {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+
+  const chkSelectAll = document.getElementById("chk-select-all-trades");
+  if (chkSelectAll) {
+    const visibleIds = filtered.map(t => t.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every(id => state.selectedTradeIds.has(id));
+    chkSelectAll.checked = allSelected;
+    chkSelectAll.addEventListener("change", (e) => {
+      if (e.target.checked) {
+        visibleIds.forEach(id => state.selectedTradeIds.add(id));
+      } else {
+        visibleIds.forEach(id => state.selectedTradeIds.delete(id));
+      }
+      renderTradesTable();
+    });
+  }
+
+  body.querySelectorAll(".chk-trade-row").forEach((chk) => {
+    chk.addEventListener("change", (e) => {
+      const id = parseInt(chk.dataset.tradeId, 10);
+      if (e.target.checked) {
+        state.selectedTradeIds.add(id);
+      } else {
+        state.selectedTradeIds.delete(id);
+      }
+      renderTradesTable();
+    });
+  });
 
   body.querySelectorAll(".sortable-th").forEach((th) => {
     th.addEventListener("click", () => {
@@ -1010,7 +1137,7 @@ function renderTradesTable() {
 
   body.querySelectorAll(".clickable-row").forEach((row) => {
     row.addEventListener("click", (e) => {
-      if (e.target.closest("select") || e.target.closest("button") || e.target.closest("a")) return;
+      if (e.target.closest("select") || e.target.closest("button") || e.target.closest("a") || e.target.closest("input")) return;
       const tradeId = parseInt(row.getAttribute("data-trade-id"), 10);
       if (tradeId) openTradeDrawer(tradeId);
     });

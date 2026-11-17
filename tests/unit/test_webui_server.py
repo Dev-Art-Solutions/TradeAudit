@@ -808,3 +808,72 @@ def test_report_export_html_endpoint(client, existing_trade_id):
     assert "@media print" in html_text
     assert "Executive Summary" in html_text
     assert "Prop Firm" in html_text
+
+
+def test_bulk_update_trades_endpoint(client, existing_trade_id):
+    from datetime import datetime, timezone
+    from tradeaudit.domain.models import Trade
+    # Create a second trade so we have at least 2 trades to bulk update
+    ctx = client.app.state.tradeaudit_context
+    account_id = 9999
+    trade2 = Trade(
+        account_id=account_id,
+        position_id=9998,
+        symbol="GBPUSD",
+        direction="BUY",
+        volume=0.1,
+        open_time=datetime(2026, 4, 1, 10, 0, tzinfo=timezone.utc),
+        open_price=1.2500,
+        initial_sl=1.2450,
+        planned_rr=2.0,
+        status="CLOSED",
+        profit=50.0,
+    )
+    saved = ctx.trade_repo.save_trades(account_id, [trade2])
+    trade2_id = saved[0].id
+
+    # 1. Validation error: empty trade_ids
+    bad_res = client.post("/api/trades/bulk-update", json={"trade_ids": []})
+    assert bad_res.status_code == 422
+
+    # 2. Create strategy to assign
+    strat_res = client.post("/api/strategies", json={
+        "name": "Bulk Scalp",
+        "description": "Test",
+        "min_rr": 1.0,
+        "requires_sl": True,
+        "requires_tp": False,
+        "allowed_direction": "ALL",
+        "is_active": True
+    })
+    assert strat_res.status_code == 200
+    strat_id = strat_res.json()["id"]
+
+    # 3. Bulk assign strategy
+    res_strat = client.post("/api/trades/bulk-update", json={
+        "trade_ids": [existing_trade_id, trade2_id],
+        "strategy_id": strat_id,
+        "update_strategy": True,
+    })
+    assert res_strat.status_code == 200
+    data_strat = res_strat.json()
+    assert data_strat["ok"] is True
+    assert data_strat["strategy_updated_count"] >= 1
+
+    # 4. Bulk update emotion
+    res_emo = client.post("/api/trades/bulk-update", json={
+        "trade_ids": [existing_trade_id, trade2_id],
+        "emotion_tag": "CALM",
+        "update_emotion": True,
+    })
+    assert res_emo.status_code == 200
+    data_emo = res_emo.json()
+    assert data_emo["ok"] is True
+    assert data_emo["emotion_updated_count"] >= 1
+
+    # 5. Verify through GET /api/trades
+    trades_res = client.get("/api/trades")
+    assert trades_res.status_code == 200
+    all_trades = {t["id"]: t for t in trades_res.json()}
+    if existing_trade_id in all_trades:
+        assert all_trades[existing_trade_id]["emotion_tag"] == "CALM"

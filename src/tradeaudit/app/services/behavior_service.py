@@ -3,7 +3,7 @@ Service for managing behavioral metadata, tag updates, and running automated beh
 """
 
 import logging
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Sequence
 
 from tradeaudit.infrastructure.repositories.trade_repository import TradeRepository
 from tradeaudit.app.services.strategy_service import StrategyService
@@ -57,6 +57,37 @@ class BehaviorService:
             trade_id=trade_id,
             emotion_tag=emotion_tag,
             behavior_notes=behavior_notes
+        )
+
+    def bulk_update_emotion_tags(
+        self,
+        trade_ids: Sequence[int],
+        emotion_tag: Optional[str],
+        clear_emotion: bool = False
+    ) -> int:
+        """
+        Set or clear emotional tags for multiple trades in a batch.
+
+        :param trade_ids: List of trade IDs to update.
+        :param emotion_tag: EmotionTag enum value string or None.
+        :param clear_emotion: True to clear the emotional tag.
+        :return: Count of updated trades.
+        """
+        if not trade_ids:
+            return 0
+
+        valid_tag = None
+        if not clear_emotion and emotion_tag:
+            try:
+                valid_tag = EmotionTag(emotion_tag).value
+            except ValueError:
+                logger.warning("Invalid emotion tag string provided for bulk update: %s", emotion_tag)
+                return 0
+
+        return self.trade_repository.update_trades_behavior_bulk(
+            trade_ids=trade_ids,
+            emotion_tag=valid_tag,
+            clear_emotion=clear_emotion or (valid_tag is None and emotion_tag == "")
         )
 
     def confirm_behavior_flag(self, trade_id: int, notes: Optional[str] = None) -> bool:

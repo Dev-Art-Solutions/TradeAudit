@@ -522,3 +522,32 @@ def test_trades_inspection_drawer(page, live_server, seeded_trade):
     page.click("#drawer-close-btn")
     page.wait_for_timeout(300)
     assert not page.locator("#trade-drawer").is_visible()
+
+
+def test_trades_bulk_selection_and_actions(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#trades")
+    page.wait_for_selector(".clickable-row", timeout=15000)
+
+    # 1. Verify checkboxes and header select-all
+    page.wait_for_selector("#chk-select-all-trades")
+    page.wait_for_selector(".chk-trade-row")
+    assert not page.locator("#bulk-actions-toolbar").is_visible()
+
+    # 2. Select the first trade
+    page.click(".chk-trade-row")
+    page.wait_for_selector("#bulk-actions-toolbar", timeout=5000)
+    assert "1 trades selected" in page.text_content("#bulk-actions-toolbar")
+
+    # 3. Apply emotion tag via bulk action
+    page.select_option("#bulk-sel-emotion", "CALM")
+    page.click("#btn-bulk-apply-emotion")
+
+    # 4. Wait for success notification
+    page.wait_for_selector("text=Tagged emotion on 1 trades", timeout=10000)
+
+    # 5. Verify select all and deselect
+    page.click("#chk-select-all-trades")
+    page.wait_for_selector("#bulk-actions-toolbar", timeout=5000)
+    page.click("#btn-bulk-clear-selection")
+    page.wait_for_timeout(300)
+    assert not page.locator("#bulk-actions-toolbar").is_visible()

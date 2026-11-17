@@ -4,7 +4,7 @@ Service for managing strategies and running compliance evaluation over trades.
 
 import json
 import logging
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from tradeaudit.domain.models import Strategy, Trade, ComplianceStatus, ComplianceResult
 from tradeaudit.infrastructure.repositories.strategy_repository import StrategyRepository
@@ -98,6 +98,52 @@ class StrategyService:
         self.trade_repo.save_trades(account_id, [target_trade])
         logger.info("Assigned strategy ID %s to trade ID %s (Compliance: %s)", strategy_id, trade_id, target_trade.compliance_status)
         return target_trade
+
+    def bulk_assign_strategy_to_trades(
+        self,
+        account_id: int,
+        trade_ids: Sequence[int],
+        strategy_id: Optional[int]
+    ) -> List[Trade]:
+        """
+        Assign or unassign a strategy to multiple trades and evaluate compliance in a single batch.
+
+        :param account_id: Account ID owning the trades.
+        :param trade_ids: Collection of trade IDs to update.
+        :param strategy_id: Strategy ID to assign (or None to unassign).
+        :return: List of updated Trade objects.
+        """
+        if not trade_ids:
+            return []
+
+        trade_ids_set = set(trade_ids)
+        all_trades = self.trade_repo.get_trades(account_id)
+        target_trades = [t for t in all_trades if t.id in trade_ids_set]
+        if not target_trades:
+            return []
+
+        strategy = self.strategy_repo.get_strategy(strategy_id) if strategy_id is not None else None
+
+        for trade in target_trades:
+            trade.strategy_id = strategy_id
+            if strategy:
+                comp_result = self.compliance_engine.evaluate(trade, strategy, all_trades)
+                trade.compliance_status = comp_result.status.value
+                details_dict = {
+                    "passed": comp_result.passed_rules,
+                    "violations": [
+                        {"rule": v.rule_name, "message": v.message, "expected": v.expected, "actual": v.actual}
+                        for v in comp_result.violations
+                    ]
+                }
+                trade.compliance_details = json.dumps(details_dict)
+            else:
+                trade.compliance_status = ComplianceStatus.UNCHECKED.value
+                trade.compliance_details = None
+
+        self.trade_repo.save_trades(account_id, target_trades)
+        logger.info("Bulk assigned strategy ID %s to %d trades on account %s", strategy_id, len(target_trades), account_id)
+        return target_trades
 
     def reevaluate_account_compliance(self, account_id: int) -> int:
         """
