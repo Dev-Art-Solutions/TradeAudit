@@ -106,6 +106,8 @@ class MonteCarloResult:
     probability_of_ruin_threshold: float = 0.0
     probability_of_target_r: float = 0.0
     worst_consecutive_losses_95th: int = 0
+    ruin_threshold_r: float = 10.0
+    target_r: float = 20.0
     sampling_method: str = "bootstrap_with_replacement"
     assumptions: List[str] = field(default_factory=list)
 
@@ -179,5 +181,9 @@ class QuantResearchResult:
     confidence_intervals: BootstrapConfidenceIntervals = field(default_factory=BootstrapConfidenceIntervals)
     total_trades_analyzed: int = 0
     trades_with_r_count: int = 0
+    var_95_r: Optional[float] = None
+    cvar_95_r: Optional[float] = None
+    var_99_r: Optional[float] = None
+    cvar_99_r: Optional[float] = None
 
 

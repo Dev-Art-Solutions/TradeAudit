@@ -68,7 +68,10 @@ class QuantResearchAnalyzer:
         if not r_list:
             return MonteCarloResult(
                 simulations_count=num_simulations,
-                horizon_trades=horizon_trades or 0
+                horizon_trades=horizon_trades or 0,
+                ruin_threshold_r=ruin_threshold_r,
+                target_r=target_r,
+                sampling_method=("bootstrap_with_replacement" if sampling_method == "bootstrap" else "shuffle_without_replacement"),
             )
 
         rng = random.Random(random_seed)
@@ -179,6 +182,8 @@ class QuantResearchAnalyzer:
             probability_of_ruin_threshold=round((ruin_hit_count / num_sims) * 100, 1),
             probability_of_target_r=round((target_hit_count / num_sims) * 100, 1),
             worst_consecutive_losses_95th=int(self._percentile(sorted_loss_streaks, 95)),
+            ruin_threshold_r=ruin_threshold_r,
+            target_r=target_r,
             sampling_method=("bootstrap_with_replacement" if sampling_method == "bootstrap" else "shuffle_without_replacement"),
             assumptions=[
                 "Observed R-multiples are representative of future trades.",
@@ -538,7 +543,8 @@ class QuantResearchAnalyzer:
         target_r: float = 20.0,
         max_drawdown_tolerance_r: float = 20.0,
         rolling_windows: Sequence[int] = (20, 50, 100),
-        random_seed: Optional[int] = None
+        random_seed: Optional[int] = None,
+        sampling_method: str = "bootstrap"
     ) -> QuantResearchResult:
         """
         Execute full comprehensive quantitative risk research analytics.
@@ -551,7 +557,8 @@ class QuantResearchAnalyzer:
             horizon_trades=horizon_trades,
             ruin_threshold_r=ruin_threshold_r,
             target_r=target_r,
-            random_seed=random_seed
+            random_seed=random_seed,
+            sampling_method=sampling_method
         )
 
         ror = self.calculate_risk_of_ruin(
@@ -572,13 +579,30 @@ class QuantResearchAnalyzer:
             random_seed=random_seed
         )
 
+        var_95 = None
+        cvar_95 = None
+        var_99 = None
+        cvar_99 = None
+        if closed_with_r:
+            r_vals = sorted([float(t.realized_r) for t in closed_with_r])
+            var_95 = round(self._percentile(r_vals, 5.0), 3)
+            var_99 = round(self._percentile(r_vals, 1.0), 3)
+            cvar_95_vals = [r for r in r_vals if r <= var_95]
+            cvar_95 = round(sum(cvar_95_vals) / len(cvar_95_vals), 3) if cvar_95_vals else var_95
+            cvar_99_vals = [r for r in r_vals if r <= var_99]
+            cvar_99 = round(sum(cvar_99_vals) / len(cvar_99_vals), 3) if cvar_99_vals else var_99
+
         return QuantResearchResult(
             monte_carlo=mc,
             risk_of_ruin=ror,
             rolling_analytics=rolling,
             confidence_intervals=ci,
             total_trades_analyzed=len(trades),
-            trades_with_r_count=len(closed_with_r)
+            trades_with_r_count=len(closed_with_r),
+            var_95_r=var_95,
+            cvar_95_r=cvar_95,
+            var_99_r=var_99,
+            cvar_99_r=cvar_99
         )
 
     @staticmethod

@@ -877,3 +877,45 @@ def test_bulk_update_trades_endpoint(client, existing_trade_id):
     all_trades = {t["id"]: t for t in trades_res.json()}
     if existing_trade_id in all_trades:
         assert all_trades[existing_trade_id]["emotion_tag"] == "CALM"
+
+
+def test_quant_endpoint_with_custom_scenarios(client, existing_trade_id):
+    from datetime import datetime, timezone
+    from tradeaudit.domain.models import Trade
+
+    ctx = client.app.state.tradeaudit_context
+    trade_with_r = Trade(
+        account_id=1,
+        position_id=202,
+        symbol="EURUSD",
+        direction="BUY",
+        volume=0.1,
+        open_time=datetime(2026, 4, 1, 10, 0, tzinfo=timezone.utc),
+        close_time=datetime(2026, 4, 1, 11, 0, tzinfo=timezone.utc),
+        open_price=1.1000,
+        close_price=1.1050,
+        initial_sl=1.0950,
+        planned_rr=2.0,
+        realized_r=2.0,
+        profit=50.0,
+        status="CLOSED"
+    )
+    ctx.trade_repo.save_trades(1, [trade_with_r])
+
+    # Test GET /api/quant with query parameters
+    res = client.get("/api/quant?simulations=100&horizon=50&ruin_threshold_r=5.0&target_r=15.0&sampling_method=shuffle")
+    assert res.status_code == 200
+    data = res.json()
+    assert "monte_carlo" in data
+    mc = data["monte_carlo"]
+    assert mc["horizon_trades"] == 50
+    assert mc["ruin_threshold_r"] == 5.0
+    assert mc["target_r"] == 15.0
+    assert mc["sampling_method"] == "shuffle_without_replacement"
+    assert mc["simulations_count"] == 100
+
+    # VaR and CVaR fields should be present
+    assert "var_95_r" in data
+    assert "cvar_95_r" in data
+    assert "var_99_r" in data
+    assert "cvar_99_r" in data

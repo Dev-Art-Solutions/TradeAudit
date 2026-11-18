@@ -4,6 +4,10 @@
 
 ### Added
 
+- Interactive Monte Carlo scenario stress-testing control bar in Quant & Risk supporting customizable horizon, ruin/DD threshold, profit target goal, and sampling methodology (Bootstrap vs. Shuffle).
+- One-click scenario presets: Prop Firm Evaluation (10R DD / 10R Target), Conservative Risk Preservation (5R DD / 15R Target), and Aggressive Growth (15R DD / 30R Target).
+- Institutional tail risk analytics suite computing historical non-parametric Value at Risk (95% & 99% VaR) and Expected Shortfall (95% & 99% CVaR).
+- Parameterized `/api/quant` endpoint with validation constraints and multi-scenario caching.
 - Batch trade editing suite in the Trades ledger with multi-selection checkboxes, select-all toggle, and floating bulk action toolbar.
 - Bulk strategy assignment and automatic compliance re-evaluation endpoint (`POST /api/trades/bulk-update`) processing batch updates in a single atomic transaction.
 - Bulk emotion tagging and unassignment controls allowing traders to rapidly journal multiple trades simultaneously.

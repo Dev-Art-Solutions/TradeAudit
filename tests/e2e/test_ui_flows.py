@@ -352,6 +352,26 @@ def test_quant_view_monte_carlo_cone_and_confidence_intervals(page, live_server,
     assert page.is_visible("text=Bootstrap 95% Confidence Intervals")
     assert page.is_visible(".mc-legend")
 
+    # Verify scenario stress testing controls and presets
+    assert page.is_visible("#btn-preset-propfirm")
+    assert page.is_visible("#btn-preset-conservative")
+    assert page.is_visible("#btn-preset-growth")
+    assert page.is_visible("#mc-input-horizon")
+    assert page.is_visible("#mc-input-ruin")
+    assert page.is_visible("#mc-input-target")
+    assert page.is_visible("#btn-run-simulation")
+
+    # Verify Institutional Tail Risk VaR / CVaR card
+    assert page.is_visible("text=Institutional Tail Risk & Value at Risk (VaR / CVaR)")
+    assert page.is_visible("text=Value at Risk (95% VaR)")
+    assert page.is_visible("text=Expected Shortfall (95% CVaR)")
+
+    # Click Prop Firm preset and verify inputs update
+    page.click("#btn-preset-propfirm")
+    page.wait_for_selector("text=Applied Prop Firm", timeout=5000)
+    assert page.input_value("#mc-input-ruin") == "10"
+    assert page.input_value("#mc-input-target") == "10" 
+
 
 def test_breakdowns_view_dimensions_and_hourly_chart(page, live_server, seeded_trade):
     page.goto(live_server["base_url"] + "/#breakdowns")

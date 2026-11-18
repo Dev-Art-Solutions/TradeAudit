@@ -638,17 +638,33 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         return to_jsonable(BreakdownAnalyzer.analyze_all(closed))
 
     @app.get("/api/quant")
-    def quant():
+    def quant(
+        simulations: int = Query(default=300, ge=50, le=2000),
+        horizon: Optional[int] = Query(default=None, ge=10, le=1000),
+        ruin_threshold_r: float = Query(default=10.0, ge=1.0, le=100.0),
+        target_r: float = Query(default=20.0, ge=1.0, le=200.0),
+        sampling_method: str = Query(default="bootstrap"),
+    ):
         _, closed = closed_trades()
-        # Monte Carlo + bootstrap CI over 1000 simulations is CPU-bound pure Python and
-        # took ~23s against a real 2.3k-trade account - far too slow to recompute on every
-        # tab visit. Cache by trade count (invalidated by the next sync) and use fewer
-        # simulations for this interactive view; the full-precision run still backs the
-        # exported report if that ever needs it.
-        cache_key = (ctx.current_login(), len(closed))
+        method = "shuffle" if sampling_method.strip().lower() == "shuffle" else "bootstrap"
+        cache_key = (
+            ctx.current_login(),
+            len(closed),
+            simulations,
+            horizon,
+            round(ruin_threshold_r, 2),
+            round(target_r, 2),
+            method,
+        )
         if cache_key not in quant_cache:
-            quant_cache.clear()
-            quant_cache[cache_key] = ctx.quant_analyzer.analyze_quant_research(closed, num_simulations=300)
+            quant_cache[cache_key] = ctx.quant_analyzer.analyze_quant_research(
+                closed,
+                num_simulations=simulations,
+                horizon_trades=horizon,
+                ruin_threshold_r=ruin_threshold_r,
+                target_r=target_r,
+                sampling_method=method,
+            )
         return to_jsonable(quant_cache[cache_key])
 
     @app.get("/api/report")

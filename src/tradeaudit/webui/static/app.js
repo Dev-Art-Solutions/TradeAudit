@@ -3572,18 +3572,97 @@ function drawMonteCarloCone(canvas, mc) {
   ctx.fillText(`Trade ${mc.horizon_trades || lastIdx}`, pad.left + chartW - 45, h - 8);
 }
 
+let quantSettings = {
+  horizon: "",
+  ruinThresholdR: 10.0,
+  targetR: 20.0,
+  samplingMethod: "bootstrap",
+  simulations: 300,
+};
+
 async function viewQuant() {
-  content().innerHTML = `<div id="quant-body">Loading\u2026</div>`;
+  content().innerHTML = `<div id="quant-body">Loading…</div>`;
+  await renderQuantView();
+}
+
+async function renderQuantView() {
+  const qs = new URLSearchParams({
+    simulations: String(quantSettings.simulations),
+    ruin_threshold_r: String(quantSettings.ruinThresholdR),
+    target_r: String(quantSettings.targetR),
+    sampling_method: quantSettings.samplingMethod,
+  });
+  if (quantSettings.horizon) {
+    qs.set("horizon", quantSettings.horizon);
+  }
+
   let q;
-  try { q = await apiGet("/quant"); } catch (e) {
-    content().innerHTML = emptyState("\u26A0\uFE0F", "Could not load", e.message); return;
+  try {
+    q = await apiGet(`/quant?${qs.toString()}`);
+  } catch (e) {
+    content().innerHTML = emptyState("⚠️", "Could not load", e.message);
+    return;
   }
   if (!q.trades_with_r_count) {
-    content().innerHTML = emptyState("\u{1F52C}", "Not enough data", "Quant research needs closed trades with a known R-multiple.");
+    content().innerHTML = emptyState("🔬", "Not enough data", "Quant research needs closed trades with a known R-multiple.");
     return;
   }
   const mc = q.monte_carlo, ror = q.risk_of_ruin, ci = q.confidence_intervals || {};
+
   content().innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px">
+        <div>
+          <div class="eyebrow" style="margin:0 0 4px 0">Scenario Stress Testing</div>
+          <div class="card-title" style="margin:0">Monte Carlo & Ruin Simulation Controls</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--text-dim)">Presets:</span>
+          <button class="btn btn-sm btn-subtle" id="btn-preset-propfirm" title="10R Max Drawdown / 10R Target Goal">💼 Prop Firm (10R/10R)</button>
+          <button class="btn btn-sm btn-subtle" id="btn-preset-conservative" title="5R Drawdown / 15R Target Goal">🛡️ Conservative (5R/15R)</button>
+          <button class="btn btn-sm btn-subtle" id="btn-preset-growth" title="15R Drawdown / 30R Target Goal">🚀 Growth (15R/30R)</button>
+        </div>
+      </div>
+      <div class="toolbar" style="gap:12px;flex-wrap:wrap;padding:0;background:none;border:none">
+        <div style="display:flex;align-items:center;gap:6px">
+          <label for="mc-input-horizon" style="font-size:12px;color:var(--text-dim);margin:0">Horizon:</label>
+          <select id="mc-input-horizon" class="table-select" style="min-width:120px">
+            <option value="" ${quantSettings.horizon === "" ? "selected" : ""}>Auto (${q.trades_with_r_count} Tr.)</option>
+            <option value="50" ${quantSettings.horizon === "50" ? "selected" : ""}>50 Trades</option>
+            <option value="100" ${quantSettings.horizon === "100" ? "selected" : ""}>100 Trades</option>
+            <option value="200" ${quantSettings.horizon === "200" ? "selected" : ""}>200 Trades</option>
+            <option value="500" ${quantSettings.horizon === "500" ? "selected" : ""}>500 Trades</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label for="mc-input-ruin" style="font-size:12px;color:var(--text-dim);margin:0">DD/Ruin (R):</label>
+          <input type="number" id="mc-input-ruin" value="${quantSettings.ruinThresholdR}" min="1" max="100" step="1" style="width:75px;padding:5px 8px;font-size:12px" />
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label for="mc-input-target" style="font-size:12px;color:var(--text-dim);margin:0">Target (R):</label>
+          <input type="number" id="mc-input-target" value="${quantSettings.targetR}" min="1" max="200" step="1" style="width:75px;padding:5px 8px;font-size:12px" />
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label for="mc-input-sampling" style="font-size:12px;color:var(--text-dim);margin:0">Method:</label>
+          <select id="mc-input-sampling" class="table-select" style="min-width:145px">
+            <option value="bootstrap" ${quantSettings.samplingMethod === "bootstrap" ? "selected" : ""}>Bootstrap (Replacement)</option>
+            <option value="shuffle" ${quantSettings.samplingMethod === "shuffle" ? "selected" : ""}>Shuffle (Permutation)</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label for="mc-input-sims" style="font-size:12px;color:var(--text-dim);margin:0">Sims:</label>
+          <select id="mc-input-sims" class="table-select" style="min-width:85px">
+            <option value="300" ${quantSettings.simulations === 300 ? "selected" : ""}>300</option>
+            <option value="500" ${quantSettings.simulations === 500 ? "selected" : ""}>500</option>
+            <option value="1000" ${quantSettings.simulations === 1000 ? "selected" : ""}>1000</option>
+          </select>
+        </div>
+        <div class="right" style="margin-left:auto">
+          <button class="btn btn-primary" id="btn-run-simulation">⚡ Run Simulation</button>
+        </div>
+      </div>
+    </div>
+
     <div class="grid grid-4">
       <div class="kpi"><div class="kpi-label">Median Final R</div><div class="kpi-value ${mc.final_r_median >= 0 ? 'win' : 'loss'}">${fmtNum(mc.final_r_median, 2)} R</div><div class="kpi-sub">50th percentile</div></div>
       <div class="kpi"><div class="kpi-label">5th / 95th Percentile</div><div class="kpi-value">${fmtNum(mc.final_r_5th, 1)} / ${fmtNum(mc.final_r_95th, 1)}</div><div class="kpi-sub">Simulation envelope</div></div>
@@ -3594,7 +3673,7 @@ async function viewQuant() {
     <div class="card" style="margin-top:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <div class="card-title" style="margin:0">Monte Carlo Equity Simulation Envelope</div>
-        <div class="chip">${mc.simulations_count} runs · ${mc.horizon_trades} trades horizon · ${esc(mc.sampling_method.replace(/_/g, " "))}</div>
+        <div class="chip" id="mc-simulation-meta">${mc.simulations_count} runs · ${mc.horizon_trades} trades horizon · ${esc(mc.sampling_method.replace(/_/g, " "))}</div>
       </div>
       <canvas id="mc-cone-canvas" class="mc-cone-canvas" style="width:100%;height:320px;display:block"></canvas>
       <div class="mc-legend">
@@ -3640,6 +3719,38 @@ async function viewQuant() {
     ` : ''}
 
     <div class="card" style="margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0">Institutional Tail Risk & Value at Risk (VaR / CVaR)</div>
+        <span class="pill win">Single-Trade Loss Boundaries</span>
+      </div>
+      <div class="grid grid-4" style="margin-top:12px">
+        <div class="kpi">
+          <div class="kpi-label">Value at Risk (95% VaR)</div>
+          <div class="kpi-value ${q.var_95_r !== null && q.var_95_r < 0 ? 'loss' : ''}">${q.var_95_r !== null ? fmtNum(q.var_95_r, 2) + 'R' : '—'}</div>
+          <div class="kpi-sub">95% of trades suffer less loss than this</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Expected Shortfall (95% CVaR)</div>
+          <div class="kpi-value ${q.cvar_95_r !== null && q.cvar_95_r < 0 ? 'loss' : ''}">${q.cvar_95_r !== null ? fmtNum(q.cvar_95_r, 2) + 'R' : '—'}</div>
+          <div class="kpi-sub">Average loss in the worst 5% tail</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Value at Risk (99% VaR)</div>
+          <div class="kpi-value ${q.var_99_r !== null && q.var_99_r < 0 ? 'loss' : ''}">${q.var_99_r !== null ? fmtNum(q.var_99_r, 2) + 'R' : '—'}</div>
+          <div class="kpi-sub">Extreme 1% tail loss boundary</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Extreme Shortfall (99% CVaR)</div>
+          <div class="kpi-value ${q.cvar_99_r !== null && q.cvar_99_r < 0 ? 'loss' : ''}">${q.cvar_99_r !== null ? fmtNum(q.cvar_99_r, 2) + 'R' : '—'}</div>
+          <div class="kpi-sub">Average loss in the worst 1% tail</div>
+        </div>
+      </div>
+      <div class="kpi-sub" style="margin-top:10px;font-size:11.5px">
+        💡 <b>Expected Shortfall (CVaR)</b> measures the average severity of extreme tail losses. Prop firm risk officers use CVaR to evaluate whether your trade distribution contains fat-tail risk.
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
       <div class="card-title">Stress Testing & Risk of Ruin</div>
       <div class="grid grid-3">
         <div><div class="kpi-label">Risk Level</div><div class="kpi-value">${esc(ror.risk_level.replace(/_/g, " "))}</div></div>
@@ -3648,8 +3759,8 @@ async function viewQuant() {
       </div>
       <div class="grid grid-3" style="margin-top:12px">
         <div><div class="kpi-label">Worst 95% Consecutive Losses</div><div class="kpi-value loss">${mc.worst_consecutive_losses_95th} trades</div></div>
-        <div><div class="kpi-label">Target (+20R) Achievement Prob</div><div class="kpi-value win">${fmtNum(mc.probability_of_target_r, 1)}%</div></div>
-        <div><div class="kpi-label">Ruin (-10R) Threshold Prob</div><div class="kpi-value ${mc.probability_of_ruin_threshold > 5 ? 'loss' : 'win'}">${fmtNum(mc.probability_of_ruin_threshold, 1)}%</div></div>
+        <div><div class="kpi-label">Target (+${fmtNum(mc.target_r || 20, 0)}R) Achievement Prob</div><div class="kpi-value win">${fmtNum(mc.probability_of_target_r, 1)}%</div></div>
+        <div><div class="kpi-label">Ruin (-${fmtNum(mc.ruin_threshold_r || 10, 0)}R) Threshold Prob</div><div class="kpi-value ${mc.probability_of_ruin_threshold > 5 ? 'loss' : 'win'}">${fmtNum(mc.probability_of_ruin_threshold, 1)}%</div></div>
       </div>
       <div class="kpi-sub" style="margin-top:14px">${esc(ror.summary_verdict)}</div>
       <ul class="kpi-sub" style="margin-top:8px">${(ror.assumptions || []).map((a) => `<li>${esc(a)}</li>`).join("")}</ul>
@@ -3665,6 +3776,56 @@ async function viewQuant() {
       const c = document.getElementById("mc-cone-canvas");
       if (c) drawMonteCarloCone(c, mc);
     }, { once: true });
+  }
+
+  // Wire simulation controls
+  const btnRun = document.getElementById("btn-run-simulation");
+  if (btnRun) {
+    btnRun.addEventListener("click", async () => {
+      quantSettings.horizon = document.getElementById("mc-input-horizon").value;
+      quantSettings.ruinThresholdR = parseFloat(document.getElementById("mc-input-ruin").value) || 10.0;
+      quantSettings.targetR = parseFloat(document.getElementById("mc-input-target").value) || 20.0;
+      quantSettings.samplingMethod = document.getElementById("mc-input-sampling").value;
+      quantSettings.simulations = parseInt(document.getElementById("mc-input-sims").value, 10) || 300;
+
+      btnRun.disabled = true;
+      btnRun.textContent = "Running…";
+      await renderQuantView();
+      showTransientBanner("Monte Carlo simulation completed.", true);
+    });
+  }
+
+  const btnPresetPropFirm = document.getElementById("btn-preset-propfirm");
+  if (btnPresetPropFirm) {
+    btnPresetPropFirm.addEventListener("click", async () => {
+      quantSettings.ruinThresholdR = 10.0;
+      quantSettings.targetR = 10.0;
+      quantSettings.horizon = "100";
+      await renderQuantView();
+      showTransientBanner("Applied Prop Firm (10R DD / 10R Target) scenario.", true);
+    });
+  }
+
+  const btnPresetConservative = document.getElementById("btn-preset-conservative");
+  if (btnPresetConservative) {
+    btnPresetConservative.addEventListener("click", async () => {
+      quantSettings.ruinThresholdR = 5.0;
+      quantSettings.targetR = 15.0;
+      quantSettings.horizon = "50";
+      await renderQuantView();
+      showTransientBanner("Applied Conservative (5R DD / 15R Target) scenario.", true);
+    });
+  }
+
+  const btnPresetGrowth = document.getElementById("btn-preset-growth");
+  if (btnPresetGrowth) {
+    btnPresetGrowth.addEventListener("click", async () => {
+      quantSettings.ruinThresholdR = 15.0;
+      quantSettings.targetR = 30.0;
+      quantSettings.horizon = "200";
+      await renderQuantView();
+      showTransientBanner("Applied Growth (15R DD / 30R Target) scenario.", true);
+    });
   }
 }
 

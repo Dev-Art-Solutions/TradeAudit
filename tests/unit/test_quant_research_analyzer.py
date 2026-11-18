@@ -175,3 +175,36 @@ def test_analyze_quant_research_master(analyzer, sample_winning_trades):
     assert master.risk_of_ruin.risk_level != RuinRiskLevel.INSUFFICIENT_DATA
     assert 20 in master.rolling_analytics
     assert master.confidence_intervals.sample_size == 30
+
+
+def test_quant_research_var_and_cvar(analyzer, sample_winning_trades):
+    master = analyzer.analyze_quant_research(
+        sample_winning_trades,
+        num_simulations=100,
+        random_seed=42
+    )
+
+    assert master.var_95_r is not None
+    assert master.cvar_95_r is not None
+    assert master.var_99_r is not None
+    assert master.cvar_99_r is not None
+
+    # Expected shortfall (CVaR) should be <= VaR (more extreme or equal in loss)
+    assert master.cvar_95_r <= master.var_95_r
+    assert master.cvar_99_r <= master.var_99_r
+    assert master.monte_carlo.ruin_threshold_r == 10.0
+    assert master.monte_carlo.target_r == 20.0
+
+
+def test_quant_research_shuffle_sampling_method(analyzer, sample_winning_trades):
+    master = analyzer.analyze_quant_research(
+        sample_winning_trades,
+        num_simulations=150,
+        horizon_trades=20,
+        sampling_method="shuffle",
+        random_seed=42
+    )
+
+    assert master.monte_carlo.sampling_method == "shuffle_without_replacement"
+    assert master.monte_carlo.horizon_trades == 20
+    assert master.monte_carlo.simulations_count == 150
