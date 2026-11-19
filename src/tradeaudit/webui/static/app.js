@@ -281,19 +281,121 @@ function drawLineChart(canvas, series, opts = {}) {
 
 async function viewDashboard() {
   content().innerHTML = `<div id="dash-body">Loading\u2026</div>`;
+  state.dashFilter = state.dashFilter || {
+    period: "ALL_TIME",
+    symbol: "ALL",
+    strategyId: "ALL",
+  };
+
+  if (!state.strategies || state.strategies.length === 0) {
+    try { await loadStrategies(); } catch (e) { state.strategies = []; }
+  }
+
+  const qs = new URLSearchParams({
+    period: state.dashFilter.period || "ALL_TIME",
+    symbol: state.dashFilter.symbol || "ALL",
+    strategy_id: state.dashFilter.strategyId || "ALL",
+  });
+
   let data;
-  try { data = await apiGet("/dashboard"); } catch (e) {
+  try {
+    data = await apiGet(`/dashboard?${qs.toString()}`);
+  } catch (e) {
     content().innerHTML = emptyState("\u26A0\uFE0F", "Could not load dashboard", e.message);
     return;
   }
-  const m = data.metrics;
-  const q = data.data_quality;
-  const snapshot = data.audit_snapshot;
-  if (!m.total_trades) {
+
+  const m = data.metrics || {};
+  const q = data.data_quality || {};
+  const snapshot = data.audit_snapshot || {};
+  const flt = data.filter || {};
+  const adv = data.advanced_risk || {};
+  const symbols = data.available_symbols || [];
+
+  const totalUnfiltered = flt.total_unfiltered_trades !== undefined ? flt.total_unfiltered_trades : (m.total_trades || 0);
+  if (!totalUnfiltered && !m.total_trades) {
     content().innerHTML = onboardingBannerHtml() +
       emptyState("\u{1F4C8}", "No trades yet", "Connect your MT5 account and run a sync from the Trades tab to see performance analytics here.");
     return;
   }
+
+  const isFiltered = (state.dashFilter.period && state.dashFilter.period !== "ALL_TIME") ||
+                     (state.dashFilter.symbol && state.dashFilter.symbol !== "ALL") ||
+                     (state.dashFilter.strategyId && state.dashFilter.strategyId !== "ALL");
+
+  const symbolOptions = symbols.map(s => `<option value="${esc(s)}" ${state.dashFilter.symbol === s ? "selected" : ""}>${esc(s)}</option>`).join("");
+  const strategyOptions = (state.strategies || []).map(st => `<option value="${st.id}" ${String(state.dashFilter.strategyId) === String(st.id) ? "selected" : ""}>${esc(st.name)}</option>`).join("");
+
+  const filterToolbarHtml = `
+    <div class="dash-filter-bar" id="dash-filter-toolbar">
+      <div class="dash-filter-pills" role="group" aria-label="Quick period filters">
+        <button class="dash-filter-pill ${state.dashFilter.period === "ALL_TIME" ? "active" : ""}" data-period="ALL_TIME">All Time</button>
+        <button class="dash-filter-pill ${state.dashFilter.period === "THIS_MONTH" ? "active" : ""}" data-period="THIS_MONTH">This Month</button>
+        <button class="dash-filter-pill ${state.dashFilter.period === "LAST_MONTH" ? "active" : ""}" data-period="LAST_MONTH">Last Month</button>
+        <button class="dash-filter-pill ${state.dashFilter.period === "THIS_WEEK" ? "active" : ""}" data-period="THIS_WEEK">This Week</button>
+        <button class="dash-filter-pill ${state.dashFilter.period === "TODAY" ? "active" : ""}" data-period="TODAY">Today</button>
+      </div>
+
+      <div class="dash-filter-controls">
+        <div class="dash-filter-select-group">
+          <label class="dash-filter-label" for="dash-sel-period">Period:</label>
+          <select id="dash-sel-period" class="dash-filter-select">
+            <option value="ALL_TIME" ${state.dashFilter.period === "ALL_TIME" ? "selected" : ""}>All Time</option>
+            <option value="TODAY" ${state.dashFilter.period === "TODAY" ? "selected" : ""}>Today</option>
+            <option value="YESTERDAY" ${state.dashFilter.period === "YESTERDAY" ? "selected" : ""}>Yesterday</option>
+            <option value="THIS_WEEK" ${state.dashFilter.period === "THIS_WEEK" ? "selected" : ""}>This Week</option>
+            <option value="LAST_WEEK" ${state.dashFilter.period === "LAST_WEEK" ? "selected" : ""}>Last Week</option>
+            <option value="THIS_MONTH" ${state.dashFilter.period === "THIS_MONTH" ? "selected" : ""}>This Month</option>
+            <option value="LAST_MONTH" ${state.dashFilter.period === "LAST_MONTH" ? "selected" : ""}>Last Month</option>
+          </select>
+        </div>
+
+        <div class="dash-filter-select-group">
+          <label class="dash-filter-label" for="dash-sel-symbol">Symbol:</label>
+          <select id="dash-sel-symbol" class="dash-filter-select">
+            <option value="ALL" ${state.dashFilter.symbol === "ALL" ? "selected" : ""}>All Symbols</option>
+            ${symbolOptions}
+          </select>
+        </div>
+
+        <div class="dash-filter-select-group">
+          <label class="dash-filter-label" for="dash-sel-strategy">Strategy:</label>
+          <select id="dash-sel-strategy" class="dash-filter-select">
+            <option value="ALL" ${state.dashFilter.strategyId === "ALL" ? "selected" : ""}>All Strategies</option>
+            ${strategyOptions}
+          </select>
+        </div>
+
+        <span class="dash-filter-count-badge ${isFiltered ? "filtered" : ""}" id="dash-filter-badge">
+          ${isFiltered ? `Showing ${m.total_trades || 0} of ${totalUnfiltered} trades` : `${m.total_trades || 0} trades`}
+        </span>
+
+        ${isFiltered ? `<button class="btn btn-sm btn-subtle" id="dash-btn-reset-filters" style="padding:3px 8px;font-size:11px">Reset</button>` : ""}
+      </div>
+    </div>
+  `;
+
+  if (!m.total_trades) {
+    content().innerHTML = `
+      <section class="dashboard-intro" aria-labelledby="dashboard-heading">
+        <div>
+          <div class="eyebrow">Audit snapshot</div>
+          <h2 id="dashboard-heading">Performance at a glance</h2>
+          <p>A decision-focused view of edge, execution quality and downside risk.</p>
+        </div>
+      </section>
+      ${filterToolbarHtml}
+      <div class="card" style="text-align:center;padding:40px 20px;">
+        <div style="font-size:32px;margin-bottom:8px">🔍</div>
+        <div style="font-weight:600;font-size:15px;margin-bottom:6px">No trades match active filter</div>
+        <div style="color:var(--text-dim);font-size:13px;margin-bottom:16px">No closed positions found for the selected period, symbol, or strategy.</div>
+        <button class="btn btn-primary" id="btn-no-match-reset">Reset Filters</button>
+      </div>
+    `;
+    wireDashboardEvents();
+    return;
+  }
+
   content().innerHTML = `
     <section class="dashboard-intro" aria-labelledby="dashboard-heading">
       <div>
@@ -306,6 +408,9 @@ async function viewDashboard() {
         <strong>${esc(m.verdict.replace(/_/g, " "))}</strong>
       </div>
     </section>
+
+    ${filterToolbarHtml}
+
     <div class="grid grid-4">
       <div class="kpi"><div class="kpi-label">Win Rate</div><div class="kpi-value">${fmtPct(m.win_rate)}</div><div class="kpi-sub">${m.winning_trades}W / ${m.losing_trades}L / ${m.breakeven_trades}BE</div></div>
       <div class="kpi"><div class="kpi-label">Net Profit</div><div class="kpi-value ${m.net_profit >= 0 ? "win" : "loss"}">${fmtNum(m.net_profit)}</div><div class="kpi-sub">${m.total_trades} total trades</div></div>
@@ -334,12 +439,17 @@ async function viewDashboard() {
         <div class="kpi-value">${m.recovery_factor === null ? "N/A" : fmtNum(m.recovery_factor, 2)}</div>
         <div class="kpi-sub">Recovery factor</div>
         <div class="kpi-sub" style="margin-top:8px">${m.avg_duration_minutes === null ? "N/A" : `${fmtNum(m.avg_duration_minutes, 1)} min avg`} (${m.trades_with_duration}/${m.total_trades})</div></div>
-      <div class="card"><div class="card-title">Avg Win / Loss (R)</div>
-        <div class="kpi-value win">${fmtNum(m.avg_win_r, 3)}</div>
-        <div class="kpi-value loss">${fmtNum(m.avg_loss_r, 3)}</div></div>
-      <div class="card"><div class="card-title">Streaks</div>
-        <div class="kpi-sub">Max consecutive wins</div><div class="kpi-value win">${m.max_consecutive_wins}</div>
-        <div class="kpi-sub" style="margin-top:8px">Max consecutive losses</div><div class="kpi-value loss">${m.max_consecutive_losses}</div></div>
+      <div class="card"><div class="card-title">Avg Win / Loss & Payout</div>
+        <div class="kpi-value win" style="display:inline">${fmtNum(m.avg_win_r, 3)} R</div> / <div class="kpi-value loss" style="display:inline">${fmtNum(m.avg_loss_r, 3)} R</div>
+        <div class="kpi-sub" style="margin-top:8px">Payout Ratio: <b>${adv && adv.win_loss_payout_ratio !== null ? adv.win_loss_payout_ratio + ":1" : "N/A"}</b></div>
+        <div class="kpi-sub" style="margin-top:4px">Longs: ${adv ? adv.long_trades_count : 0} (${adv && adv.long_win_rate !== null ? Math.round(adv.long_win_rate * 100) + "% W" : "—"}) · Shorts: ${adv ? adv.short_trades_count : 0} (${adv && adv.short_win_rate !== null ? Math.round(adv.short_win_rate * 100) + "% W" : "—"})</div>
+      </div>
+      <div class="card"><div class="card-title">Streaks & Extremes</div>
+        <div class="kpi-sub">Max consecutive wins / losses</div>
+        <div class="kpi-value win" style="display:inline">${m.max_consecutive_wins}W</div> / <div class="kpi-value loss" style="display:inline">${m.max_consecutive_losses}L</div>
+        <div class="kpi-sub" style="margin-top:8px">Largest Win: <b class="win">+${fmtNum(adv ? adv.largest_win : 0)}</b></div>
+        <div class="kpi-sub">Largest Loss: <b class="loss">${fmtNum(adv ? adv.largest_loss : 0)}</b></div>
+      </div>
     </div>
     <section class="card calendar-card" id="trading-calendar-section" aria-labelledby="calendar-heading">
       <div id="calendar-container"></div>
@@ -377,6 +487,9 @@ async function viewDashboard() {
       </div>
     </section>
   `;
+
+  wireDashboardEvents();
+
   const copyFingerprint = async () => {
     try {
       await navigator.clipboard.writeText(snapshot.dataset_sha256);
@@ -405,6 +518,59 @@ async function viewDashboard() {
   drawLineChart(document.getElementById("chart-drawdown"), underwaterSeries, { color: "#ef5350" });
 
   renderTradingCalendar(data.daily_summary || []);
+}
+
+function wireDashboardEvents() {
+  const pills = document.querySelectorAll(".dash-filter-pill");
+  pills.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const p = btn.getAttribute("data-period");
+      if (p) {
+        state.dashFilter.period = p;
+        viewDashboard();
+      }
+    });
+  });
+
+  const selPeriod = document.getElementById("dash-sel-period");
+  if (selPeriod) {
+    selPeriod.addEventListener("change", (e) => {
+      state.dashFilter.period = e.target.value;
+      viewDashboard();
+    });
+  }
+
+  const selSymbol = document.getElementById("dash-sel-symbol");
+  if (selSymbol) {
+    selSymbol.addEventListener("change", (e) => {
+      state.dashFilter.symbol = e.target.value;
+      viewDashboard();
+    });
+  }
+
+  const selStrategy = document.getElementById("dash-sel-strategy");
+  if (selStrategy) {
+    selStrategy.addEventListener("change", (e) => {
+      state.dashFilter.strategyId = e.target.value;
+      viewDashboard();
+    });
+  }
+
+  const resetBtn = document.getElementById("dash-btn-reset-filters");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      state.dashFilter = { period: "ALL_TIME", symbol: "ALL", strategyId: "ALL" };
+      viewDashboard();
+    });
+  }
+
+  const noMatchReset = document.getElementById("btn-no-match-reset");
+  if (noMatchReset) {
+    noMatchReset.addEventListener("click", () => {
+      state.dashFilter = { period: "ALL_TIME", symbol: "ALL", strategyId: "ALL" };
+      viewDashboard();
+    });
+  }
 }
 
 const MONTH_NAMES = [
@@ -506,6 +672,7 @@ function renderTradingCalendar(dailySummary) {
         <button class="btn btn-sm" id="cal-btn-prev" title="Previous Month">◀</button>
         <h3 class="cal-title" id="calendar-heading">${MONTH_NAMES[m]} ${y}</h3>
         <button class="btn btn-sm" id="cal-btn-next" title="Next Month">▶</button>
+        <button class="btn btn-sm" id="cal-btn-today" title="Jump to current month">Today</button>
         ${dailySummary.length > 0 ? '<button class="btn btn-sm" id="cal-btn-latest" title="Jump to latest trading activity">Latest</button>' : ''}
       </div>
       <div class="cal-nav-right">
@@ -586,6 +753,16 @@ function renderTradingCalendar(dailySummary) {
         state.calMonth = parseInt(parts[1], 10) - 1;
         renderTradingCalendar(dailySummary);
       }
+    });
+  }
+
+  const todayBtn = document.getElementById("cal-btn-today");
+  if (todayBtn) {
+    todayBtn.addEventListener("click", () => {
+      const now = new Date();
+      state.calYear = now.getFullYear();
+      state.calMonth = now.getMonth();
+      renderTradingCalendar(dailySummary);
     });
   }
 

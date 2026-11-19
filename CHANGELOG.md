@@ -4,6 +4,10 @@
 
 ### Added
 
+- Interactive period, symbol, and strategy filtering toolbar on the Dashboard with quick preset pills (All Time, This Month, Last Month, This Week, Today) and live trade volume counters.
+- Advanced risk, payout, and directional breakdown metrics on the Dashboard: Win/Loss monetary payout ratio, largest winning trade, largest losing trade, and Long vs. Short execution win rates.
+- Multi-dimensional query parameter support in `GET /api/dashboard` (`period`, `symbol`, `strategy_id`, `custom_start`, `custom_end`) backed by `AnalysisFilter` and `FilterEvaluator`.
+- One-click "Today" / current month calendar jump button (`#cal-btn-today`) and dynamic month synchronization in the interactive Trading Calendar.
 - Interactive Monte Carlo scenario stress-testing control bar in Quant & Risk supporting customizable horizon, ruin/DD threshold, profit target goal, and sampling methodology (Bootstrap vs. Shuffle).
 - One-click scenario presets: Prop Firm Evaluation (10R DD / 10R Target), Conservative Risk Preservation (5R DD / 15R Target), and Aggressive Growth (15R DD / 30R Target).
 - Institutional tail risk analytics suite computing historical non-parametric Value at Risk (95% & 99% VaR) and Expected Shortfall (95% & 99% CVaR).

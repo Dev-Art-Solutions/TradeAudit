@@ -26,7 +26,7 @@ from tradeaudit.infrastructure.database.models import TradeModel
 from tradeaudit.domain.candles import TimeFrame
 from tradeaudit.domain.annotations import ChartAnnotation, AnnotationType, TradeJournalNote
 
-from tradeaudit.domain.filters import AnalysisFilter, PeriodPreset
+from tradeaudit.domain.filters import AnalysisFilter, PeriodPreset, FilterEvaluator
 from tradeaudit.domain.report import ExportType, PrivacyOptions, ReportConfig
 from tradeaudit.app.services.performance_analyzer import PerformanceAnalyzer
 from tradeaudit.app.services.data_quality_analyzer import DataQualityAnalyzer
@@ -575,24 +575,105 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         return result
 
     @app.get("/api/dashboard")
-    def dashboard():
+    def dashboard(
+        period: Optional[str] = "ALL_TIME",
+        symbol: Optional[str] = "ALL",
+        strategy_id: Optional[str] = "ALL",
+        custom_start: Optional[str] = None,
+        custom_end: Optional[str] = None,
+    ):
         _, closed = closed_trades()
-        metrics = PerformanceAnalyzer.analyze(closed)
+        available_symbols = sorted(list({t.symbol for t in closed if t.symbol}))
+
+        period_preset = PeriodPreset.ALL_TIME
+        if period and period.upper() != "ALL_TIME":
+            try:
+                period_preset = PeriodPreset(period.upper())
+            except ValueError:
+                period_preset = PeriodPreset.ALL_TIME
+
+        symbols_list = []
+        if symbol and symbol.upper() != "ALL":
+            symbols_list = [symbol]
+
+        strat_id: Optional[int] = None
+        if strategy_id and strategy_id.upper() != "ALL":
+            try:
+                strat_id = int(strategy_id)
+            except (ValueError, TypeError):
+                strat_id = None
+
+        custom_start_dt = None
+        custom_end_dt = None
+        if custom_start:
+            try:
+                custom_start_dt = datetime.fromisoformat(custom_start)
+            except Exception:
+                pass
+        if custom_end:
+            try:
+                custom_end_dt = datetime.fromisoformat(custom_end)
+            except Exception:
+                pass
+
+        filters = AnalysisFilter(
+            period=period_preset,
+            custom_start_date=custom_start_dt,
+            custom_end_date=custom_end_dt,
+            symbols=symbols_list,
+            strategy_id=strat_id,
+        )
+
+        filtered = FilterEvaluator.apply(closed, filters)
+        metrics = PerformanceAnalyzer.analyze(filtered)
         account_info = None
         if ctx.mt5_service.is_connected():
             try:
                 account_info = ctx.mt5_service.get_account_info()
             except Exception:
                 account_info = None
-        quality = DataQualityAnalyzer.analyze(closed)
-        snapshot = AuditSnapshotService.build(closed, ctx.settings.app_version)
-        daily_summary = _build_daily_summary(closed)
+        quality = DataQualityAnalyzer.analyze(filtered)
+        snapshot = AuditSnapshotService.build(filtered, ctx.settings.app_version)
+        daily_summary = _build_daily_summary(filtered)
+
+        wins = [t for t in filtered if t.net_profit > 0]
+        losses = [t for t in filtered if t.net_profit < 0]
+        largest_win = max([t.net_profit for t in wins], default=0.0)
+        largest_loss = min([t.net_profit for t in losses], default=0.0)
+        win_loss_payout_ratio = (
+            abs(metrics.avg_win_monetary / metrics.avg_loss_monetary)
+            if metrics.avg_loss_monetary != 0.0 else None
+        )
+        long_trades = [t for t in filtered if t.direction and t.direction.upper() == "BUY"]
+        short_trades = [t for t in filtered if t.direction and t.direction.upper() == "SELL"]
+        long_wins = len([t for t in long_trades if t.net_profit > 0])
+        short_wins = len([t for t in short_trades if t.net_profit > 0])
+        long_win_rate = round(long_wins / len(long_trades), 4) if long_trades else None
+        short_win_rate = round(short_wins / len(short_trades), 4) if short_trades else None
+
         return {
             "metrics": to_jsonable(metrics),
             "data_quality": to_jsonable(quality),
             "audit_snapshot": snapshot.as_dict(),
             "account": to_jsonable(account_info),
             "daily_summary": daily_summary,
+            "filter": {
+                "period": period_preset.value,
+                "symbol": symbol or "ALL",
+                "strategy_id": strategy_id or "ALL",
+                "total_unfiltered_trades": len(closed),
+                "filtered_trades": len(filtered),
+            },
+            "available_symbols": available_symbols,
+            "advanced_risk": {
+                "largest_win": round(largest_win, 2),
+                "largest_loss": round(largest_loss, 2),
+                "win_loss_payout_ratio": round(win_loss_payout_ratio, 2) if win_loss_payout_ratio is not None else None,
+                "long_trades_count": len(long_trades),
+                "short_trades_count": len(short_trades),
+                "long_win_rate": long_win_rate,
+                "short_win_rate": short_win_rate,
+            },
         }
 
     @app.get("/api/audit-snapshot")

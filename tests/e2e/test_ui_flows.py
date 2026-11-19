@@ -487,8 +487,28 @@ def test_dashboard_calendar_and_underwater_chart(page, live_server, seeded_trade
     # Calendar navigation and unit controls
     assert page.is_visible("#cal-btn-prev")
     assert page.is_visible("#cal-btn-next")
+    assert page.is_visible("#cal-btn-today")
     assert page.is_visible("#cal-unit-money")
     assert page.is_visible("#cal-unit-r")
+
+    # Dashboard interactive filter bar
+    assert page.is_visible("#dash-filter-toolbar")
+    assert page.is_visible('.dash-filter-pill[data-period="ALL_TIME"]')
+    assert page.is_visible('.dash-filter-pill[data-period="TODAY"]')
+    assert page.is_visible("#dash-sel-period")
+    assert page.is_visible("#dash-sel-symbol")
+    assert page.is_visible("#dash-sel-strategy")
+    assert "1 trades" in page.text_content("#dash-filter-badge")
+
+    # Test filtering by Today (seeded trade is 2026-01-01, not today)
+    page.click('.dash-filter-pill[data-period="TODAY"]')
+    page.wait_for_selector("#btn-no-match-reset", timeout=5000)
+    assert page.is_visible("text=No trades match active filter")
+
+    # Reset filter back to All Time
+    page.click("#btn-no-match-reset")
+    page.wait_for_selector('.clickable-cal-day[data-cal-date="2026-01-01"]', timeout=5000)
+    assert page.is_visible('.clickable-cal-day[data-cal-date="2026-01-01"]')
 
     # The seeded trade is on 2026-01-01 ($50.00, +1.5R)
     # The calendar defaults to January 2026

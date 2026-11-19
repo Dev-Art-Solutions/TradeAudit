@@ -707,6 +707,27 @@ def test_dashboard_daily_summary_and_underwater_series(client):
     assert day2["net_r"] == 1.5
     assert day2["win_rate"] == 1.0
 
+    # Test Symbol Filtering
+    sym_res = client.get("/api/dashboard?symbol=USDJPY")
+    assert sym_res.status_code == 200
+    sym_data = sym_res.json()
+    assert sym_data["metrics"]["total_trades"] == 1
+    assert sym_data["filter"]["symbol"] == "USDJPY"
+    assert sym_data["filter"]["total_unfiltered_trades"] == 3
+    assert sym_data["filter"]["filtered_trades"] == 1
+    assert sym_data["daily_summary"][0]["date"] == "2026-03-11"
+
+    # Test Advanced Risk metrics on all trades
+    all_res = client.get("/api/dashboard")
+    adv = all_res.json()["advanced_risk"]
+    assert adv["largest_win"] == 120.0
+    assert adv["largest_loss"] == -40.0
+    assert adv["long_trades_count"] == 2
+    assert adv["short_trades_count"] == 1
+    assert adv["win_loss_payout_ratio"] is not None
+    assert all_res.json()["available_symbols"] == ["EURUSD", "GBPUSD", "USDJPY"]
+
+
 
 def test_get_trade_detail_with_lifecycle_and_deals(client):
     from datetime import datetime, timezone
