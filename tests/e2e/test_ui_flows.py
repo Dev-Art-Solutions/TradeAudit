@@ -404,6 +404,12 @@ def test_strategy_vs_trader_matrix_and_scatter_canvas(page, live_server, seeded_
     assert page.is_visible("text=Bad Wins")
     assert page.is_visible("text=Bad Losses")
 
+    # What-If Discipline Equity Curves canvas and Alpha stats
+    assert page.is_visible("#svt-equity-canvas")
+    assert page.is_visible("text=What-If \"Discipline Edge\" Equity Curves")
+    assert page.is_visible(".svt-equity-stats-bar")
+    assert page.is_visible(".svt-alpha-highlight")
+
     # 2D discipline scatter plot canvas
     assert page.is_visible("#svt-scatter-canvas")
     assert page.is_visible("text=Discipline Scatter Distribution")

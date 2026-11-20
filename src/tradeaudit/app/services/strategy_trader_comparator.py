@@ -44,7 +44,14 @@ class StrategyTraderComparator:
                 four_quadrants=FourQuadrantCounts(),
                 deviation_cost_r=0.0,
                 deviation_cost_monetary=0.0,
-                quality_verdict="NO_TRADES"
+                quality_verdict="NO_TRADES",
+                actual_cumulative_r_series=[],
+                compliant_cumulative_r_series=[],
+                no_bad_losses_cumulative_r_series=[],
+                no_bad_losses_net_r=0.0,
+                no_bad_losses_profit=0.0,
+                discipline_alpha_r=0.0,
+                discipline_alpha_monetary=0.0,
             )
 
         # Categorize trade subsets
@@ -135,6 +142,63 @@ class StrategyTraderComparator:
         else:
             quality_verdict = "BALANCED"
 
+        # Calculate time series trajectories for What-If Discipline Curve
+        sorted_closed = sorted(
+            closed_trades,
+            key=lambda t: t.close_time or t.open_time or datetime.min
+        )
+
+        actual_series: List[float] = []
+        compliant_series: List[float] = []
+        no_bad_losses_series: List[float] = []
+
+        running_actual = 0.0
+        running_compliant = 0.0
+        running_no_bad_losses = 0.0
+
+        for t in sorted_closed:
+            r = t.realized_r if t.realized_r is not None else 0.0
+            running_actual += r
+            actual_series.append(round(running_actual, 4))
+
+            if t.compliance_status == ComplianceStatus.COMPLIANT.value:
+                running_compliant += r
+            compliant_series.append(round(running_compliant, 4))
+
+            is_bad_loss = (
+                t.compliance_status in (ComplianceStatus.DEVIATION.value, ComplianceStatus.PARTIAL.value)
+                and t.net_profit < 0
+            )
+            if not is_bad_loss:
+                running_no_bad_losses += r
+            no_bad_losses_series.append(round(running_no_bad_losses, 4))
+
+        no_bad_losses_net_r = round(
+            sum(
+                (t.realized_r or 0.0)
+                for t in sorted_closed
+                if not (
+                    t.compliance_status in (ComplianceStatus.DEVIATION.value, ComplianceStatus.PARTIAL.value)
+                    and t.net_profit < 0
+                )
+            ),
+            4,
+        )
+        no_bad_losses_profit = round(
+            sum(
+                t.net_profit
+                for t in sorted_closed
+                if not (
+                    t.compliance_status in (ComplianceStatus.DEVIATION.value, ComplianceStatus.PARTIAL.value)
+                    and t.net_profit < 0
+                )
+            ),
+            2,
+        )
+
+        discipline_alpha_r = round(no_bad_losses_net_r - (total_perf.net_r or 0.0), 4)
+        discipline_alpha_monetary = round(no_bad_losses_profit - (total_perf.net_profit or 0.0), 2)
+
         return StrategyVsTraderComparison(
             total_performance=total_perf,
             compliant_performance=compliant_perf,
@@ -143,5 +207,12 @@ class StrategyTraderComparator:
             four_quadrants=quadrants,
             deviation_cost_r=deviation_cost_r,
             deviation_cost_monetary=deviation_cost_monetary,
-            quality_verdict=quality_verdict
+            quality_verdict=quality_verdict,
+            actual_cumulative_r_series=actual_series,
+            compliant_cumulative_r_series=compliant_series,
+            no_bad_losses_cumulative_r_series=no_bad_losses_series,
+            no_bad_losses_net_r=no_bad_losses_net_r,
+            no_bad_losses_profit=no_bad_losses_profit,
+            discipline_alpha_r=discipline_alpha_r,
+            discipline_alpha_monetary=discipline_alpha_monetary,
         )

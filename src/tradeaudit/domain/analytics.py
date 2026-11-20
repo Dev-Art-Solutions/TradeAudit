@@ -85,6 +85,13 @@ class StrategyVsTraderComparison:
     deviation_cost_r: float = 0.0
     deviation_cost_monetary: float = 0.0
     quality_verdict: str = "INSUFFICIENT_DATA"
+    actual_cumulative_r_series: List[float] = field(default_factory=list)
+    compliant_cumulative_r_series: List[float] = field(default_factory=list)
+    no_bad_losses_cumulative_r_series: List[float] = field(default_factory=list)
+    no_bad_losses_net_r: float = 0.0
+    no_bad_losses_profit: float = 0.0
+    discipline_alpha_r: float = 0.0
+    discipline_alpha_monetary: float = 0.0
 
 
 @dataclass

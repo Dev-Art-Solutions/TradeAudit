@@ -87,6 +87,16 @@ def test_strategy_vs_trader_comparison_subsets():
     assert quads.bad_losses_count == 1
     assert quads.bad_losses_net_r == -2.0
 
+    # Trajectories for What-If Discipline Curve
+    assert comparison.actual_cumulative_r_series == [2.0, 1.0, -1.0, 0.0]
+    assert comparison.compliant_cumulative_r_series == [2.0, 1.0, 1.0, 1.0]
+    assert comparison.no_bad_losses_cumulative_r_series == [2.0, 1.0, 1.0, 2.0]
+    assert comparison.no_bad_losses_net_r == 2.0
+    assert comparison.no_bad_losses_profit == 200.0
+    assert comparison.discipline_alpha_r == 2.0
+    assert comparison.discipline_alpha_monetary == 200.0
+
+
 
 def test_high_discipline_verdict():
     now = datetime.now()

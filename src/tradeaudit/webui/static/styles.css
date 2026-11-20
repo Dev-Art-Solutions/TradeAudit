@@ -1210,6 +1210,48 @@ canvas.chart-canvas { width: 100%; height: 220px; display: block; }
 .dot-good-loss { background: #4f8cff; }
 .dot-bad-win { background: #f59e0b; }
 .dot-bad-loss { background: #ef5350; }
+.dot-actual { background: #f59e0b; }
+.dot-compliant { background: #10b981; }
+.dot-no-bad-losses { background: #38bdf8; }
+
+.svt-equity-stats-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  margin: 12px 0 16px 0;
+  font-size: 12px;
+}
+
+.svt-equity-stat-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.svt-stat-sep {
+  color: var(--border-soft);
+}
+
+.svt-alpha-highlight {
+  background: rgba(56, 189, 248, 0.1);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.svt-equity-canvas {
+  width: 100%;
+  height: 280px;
+  background: #090d13;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  display: block;
+}
 
 .svt-matrix-layout {
   display: flex;

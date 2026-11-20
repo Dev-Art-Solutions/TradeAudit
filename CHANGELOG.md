@@ -4,6 +4,10 @@
 
 ### Added
 
+- What-If "Discipline Edge" cumulative equity curves in Strategy vs Trader (`#svt-equity-canvas`) contrasting Actual Realized trajectory against Compliant Rule-Strict and No-Bad-Losses counterfactuals.
+- Discipline Alpha quantification measuring the recoverable net R and monetary gain achievable by eliminating Quadrant IV unforced errors.
+- Time-series trajectory generation in `StrategyTraderComparator` tracking actual, compliant, and no-bad-losses cumulative R curves step-by-step.
+- Interactive crosshair tooltips on the What-If equity curves showing trade-by-trade R comparisons on hover.
 - Interactive period, symbol, and strategy filtering toolbar on the Dashboard with quick preset pills (All Time, This Month, Last Month, This Week, Today) and live trade volume counters.
 - Advanced risk, payout, and directional breakdown metrics on the Dashboard: Win/Loss monetary payout ratio, largest winning trade, largest losing trade, and Long vs. Short execution win rates.
 - Multi-dimensional query parameter support in `GET /api/dashboard` (`period`, `symbol`, `strategy_id`, `custom_start`, `custom_end`) backed by `AnalysisFilter` and `FilterEvaluator`.

@@ -2392,6 +2392,139 @@ function drawDisciplineScatter(canvas, trades) {
   };
 }
 
+function drawDisciplineEquityCurves(canvas, c) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 800;
+  const h = canvas.clientHeight || 280;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const actual = c.actual_cumulative_r_series || [];
+  const compliant = c.compliant_cumulative_r_series || [];
+  const noBadLosses = c.no_bad_losses_cumulative_r_series || [];
+
+  const n = Math.max(actual.length, compliant.length, noBadLosses.length);
+  if (n < 1) {
+    ctx.fillStyle = "#6e7681";
+    ctx.font = "12px Segoe UI";
+    ctx.fillText("No closed trades to display trajectory", 20, h / 2);
+    return;
+  }
+
+  const allVals = [0, ...actual, ...compliant, ...noBadLosses];
+  const minVal = Math.min(...allVals);
+  const maxVal = Math.max(...allVals);
+  const range = (maxVal - minVal) || 1;
+
+  const pad = { top: 25, bottom: 25, left: 45, right: 25 };
+  const chartW = Math.max(50, w - pad.left - pad.right);
+  const chartH = Math.max(50, h - pad.top - pad.bottom);
+
+  function getX(idx) {
+    if (n <= 1) return pad.left + chartW / 2;
+    return pad.left + (idx / (n - 1)) * chartW;
+  }
+
+  function getY(val) {
+    return pad.top + chartH - ((val - minVal) / range) * chartH;
+  }
+
+  const zeroY = getY(0);
+
+  // Grid lines
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const yVal = minVal + (range * i) / 4;
+    const y = getY(yVal);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(pad.left + chartW, y);
+    ctx.stroke();
+
+    ctx.fillStyle = "#6e7681";
+    ctx.font = "10px monospace";
+    ctx.textAlign = "right";
+    ctx.fillText(yVal.toFixed(1) + "R", pad.left - 6, y + 3);
+  }
+
+  // Zero baseline
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(pad.left, zeroY);
+  ctx.lineTo(pad.left + chartW, zeroY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  function plotLine(series, color, width, dashed = false) {
+    if (!series || !series.length) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    if (dashed) ctx.setLineDash([4, 3]);
+    else ctx.setLineDash([]);
+    ctx.beginPath();
+    series.forEach((v, idx) => {
+      const x = getX(idx);
+      const y = getY(v);
+      if (idx === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (series.length > 0) {
+      const lastX = getX(series.length - 1);
+      const lastY = getY(series[series.length - 1]);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  plotLine(noBadLosses, "#38bdf8", 2.2);
+  plotLine(compliant, "#10b981", 2.2);
+  plotLine(actual, "#f59e0b", 2.5);
+
+  const tooltip = document.getElementById("svt-equity-tooltip");
+  if (tooltip) {
+    canvas.onmousemove = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      if (mx < pad.left || mx > pad.left + chartW) {
+        tooltip.style.display = "none";
+        return;
+      }
+      const ratio = (mx - pad.left) / chartW;
+      const idx = Math.min(n - 1, Math.max(0, Math.round(ratio * (n - 1))));
+      const actR = actual[idx] !== undefined ? actual[idx].toFixed(2) : "—";
+      const compR = compliant[idx] !== undefined ? compliant[idx].toFixed(2) : "—";
+      const noBadR = noBadLosses[idx] !== undefined ? noBadLosses[idx].toFixed(2) : "—";
+
+      tooltip.innerHTML = `
+        <div style="font-weight:700;margin-bottom:4px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:3px">Trade #${idx + 1}</div>
+        <div style="color:#f59e0b">🟠 Actual: <b>${actR} R</b></div>
+        <div style="color:#10b981">🟢 Compliant: <b>${compR} R</b></div>
+        <div style="color:#38bdf8">🔵 No Bad Losses: <b>${noBadR} R</b></div>
+      `;
+      tooltip.style.display = "block";
+      const ttX = Math.min(rect.width - 150, Math.max(10, mx + 15));
+      tooltip.style.left = ttX + "px";
+      tooltip.style.top = "15px";
+    };
+
+    canvas.onmouseleave = () => {
+      tooltip.style.display = "none";
+    };
+  }
+}
+
 async function viewStrategyVsTrader() {
   content().innerHTML = `<div id="svt-body">Loading…</div>`;
   let c;
@@ -2583,6 +2716,64 @@ async function viewStrategyVsTrader() {
       </div>
     </div>
 
+    <!-- What-If Discipline Equity Curves Comparison -->
+    <div class="card" style="margin-top: 16px;">
+      <div class="card-header-row">
+        <div>
+          <div class="card-title">What-If "Discipline Edge" Equity Curves</div>
+          <div class="card-sub">Comparing Actual Realized trajectory against Compliant Rule-Strict and No-Bad-Losses counterfactuals</div>
+        </div>
+        <div class="svt-matrix-legend">
+          <span class="svt-legend-item"><span class="svt-dot dot-actual"></span> Actual Realized</span>
+          <span class="svt-legend-item"><span class="svt-dot dot-compliant"></span> Compliant Only</span>
+          <span class="svt-legend-item"><span class="svt-dot dot-no-bad-losses"></span> Without Bad Losses</span>
+        </div>
+      </div>
+
+      <div class="svt-equity-stats-bar">
+        <div class="svt-equity-stat-item">
+          <span class="dim">Actual Realized:</span>
+          <b class="${(c.total_performance.net_r || 0) >= 0 ? "win" : "loss"}">
+            ${fmtNum(c.total_performance.net_r || 0, 2)} R
+          </b>
+          <span class="dim">(${fmtNum(c.total_performance.net_profit || 0)})</span>
+        </div>
+        <div class="svt-stat-sep">·</div>
+        <div class="svt-equity-stat-item">
+          <span class="dim">Compliant Only:</span>
+          <b class="${(c.compliant_performance.net_r || 0) >= 0 ? "win" : "loss"}">
+            ${fmtNum(c.compliant_performance.net_r || 0, 2)} R
+          </b>
+          <span class="dim">(${fmtNum(c.compliant_performance.net_profit || 0)})</span>
+        </div>
+        <div class="svt-stat-sep">·</div>
+        <div class="svt-equity-stat-item">
+          <span class="dim">Without Bad Losses:</span>
+          <b class="${(c.no_bad_losses_net_r || 0) >= 0 ? "win" : "loss"}">
+            ${fmtNum(c.no_bad_losses_net_r || 0, 2)} R
+          </b>
+          <span class="dim">(${fmtNum(c.no_bad_losses_profit || 0)})</span>
+        </div>
+        <div class="svt-stat-sep">·</div>
+        <div class="svt-equity-stat-item svt-alpha-highlight">
+          <span>Discipline Alpha:</span>
+          <b class="${(c.discipline_alpha_r || 0) >= 0 ? "win" : "loss"}">
+            +${fmtNum(c.discipline_alpha_r || 0, 2)} R
+          </b>
+          <span class="dim">(+${fmtNum(c.discipline_alpha_monetary || 0)})</span>
+        </div>
+      </div>
+
+      <div style="position:relative">
+        <canvas id="svt-equity-canvas" class="svt-equity-canvas"></canvas>
+        <div id="svt-equity-tooltip" class="svt-tooltip"></div>
+      </div>
+      <div class="svt-scatter-footer">
+        <span>X-Axis: Chronological Trade Sequence (1 to ${c.total_performance.total_trades})</span>
+        <span>Y-Axis: Cumulative R (Zero baseline indicated)</span>
+      </div>
+    </div>
+
     <!-- 2D Discipline Scatter Plot Canvas -->
     <div class="card" style="margin-top: 16px;">
       <div class="card-header-row">
@@ -2614,6 +2805,11 @@ async function viewStrategyVsTrader() {
   const canvas = document.getElementById("svt-scatter-canvas");
   if (canvas) {
     drawDisciplineScatter(canvas, state.trades);
+  }
+
+  const eqCanvas = document.getElementById("svt-equity-canvas");
+  if (eqCanvas) {
+    drawDisciplineEquityCurves(eqCanvas, c);
   }
 }
 

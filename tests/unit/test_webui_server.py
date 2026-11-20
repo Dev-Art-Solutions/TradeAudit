@@ -592,6 +592,12 @@ def test_strategy_vs_trader_endpoint_with_seeded_trades(client, existing_trade_i
         "HIGH_DISCIPLINE", "EXECUTION_BREAKDOWN", "FLAWED_STRATEGY_LUCKY_DEVIATIONS",
         "FLAWED_STRATEGY_AND_EXECUTION", "BALANCED", "ALL_TRADES_DEVIATIONS"
     )
+    assert "actual_cumulative_r_series" in data
+    assert "compliant_cumulative_r_series" in data
+    assert "no_bad_losses_cumulative_r_series" in data
+    assert data["discipline_alpha_r"] == 1.0
+    assert data["discipline_alpha_monetary"] == 100.0
+
 
 
 def test_live_journal_endpoint_returns_events_when_present(client):
