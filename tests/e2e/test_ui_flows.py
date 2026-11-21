@@ -382,6 +382,11 @@ def test_breakdowns_view_dimensions_and_hourly_chart(page, live_server, seeded_t
     assert page.is_visible("text=By Symbol")
     assert page.is_visible("text=Contextual Trade Sequence")
 
+    # Global Trading Sessions Performance Matrix and live clock hub
+    assert page.is_visible(".session-matrix-card")
+    assert page.is_visible(".session-clock-pill")
+    assert page.locator(".session-card").count() >= 5
+
     # Filter to Sequence & Streaks category
     page.click('[data-bd-cat="sequence"]')
     page.wait_for_selector(".cat-sequence", timeout=5000)
@@ -550,10 +555,13 @@ def test_trades_inspection_drawer(page, live_server, seeded_trade):
     assert page.is_visible("#trade-drawer-panel")
     assert page.is_visible("#drawer-close-btn")
     assert page.is_visible("#drawer-btn-chart")
+    assert page.is_visible("#drawer-btn-copy-ai-prompt")
 
     # Seeded trade is EURUSD BUY
     assert "EURUSD" in page.text_content("#trade-drawer-panel")
     assert "BUY" in page.text_content("#trade-drawer-panel")
+    assert "Holding Duration" in page.text_content("#trade-drawer-panel")
+    assert "R:R Capture Efficiency" in page.text_content("#trade-drawer-panel")
     assert page.is_visible("#drawer-strat-select")
     assert page.is_visible("#drawer-emotion-select")
     assert page.is_visible("#drawer-notes-input")

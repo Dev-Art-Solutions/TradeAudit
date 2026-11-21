@@ -3032,6 +3032,112 @@ function breakdownTable(title, dict, categoryClass = "") {
     </div>`;
 }
 
+const SESSIONS_META = {
+  ASIA: { name: "Asian Session", icon: "🌏", hours: "00:00 – 08:00 UTC", desc: "Tokyo / Sydney / Singapore" },
+  LONDON: { name: "London Session", icon: "🏛️", hours: "07:00 – 15:00 UTC", desc: "European Open & Core Volume" },
+  NEW_YORK: { name: "New York Session", icon: "🗽", hours: "13:00 – 21:00 UTC", desc: "US Market Open & Liquidity" },
+  OVERLAP: { name: "London / NY Overlap", icon: "⚡", hours: "13:00 – 15:00 UTC", desc: "Peak Volume & Volatility" },
+  OFF_HOURS: { name: "Off-Hours Session", icon: "🌙", hours: "21:00 – 00:00 UTC", desc: "Rollover & Thin Liquidity" },
+};
+
+function getLiveSessionStatus() {
+  const utcHour = new Date().getUTCHours();
+  const active = [];
+  if (utcHour >= 0 && utcHour < 8) active.push("ASIA");
+  if (utcHour >= 7 && utcHour < 15) active.push("LONDON");
+  if (utcHour >= 13 && utcHour < 21) active.push("NEW_YORK");
+  if (utcHour >= 13 && utcHour < 15) active.push("OVERLAP");
+  if (active.length === 0) active.push("OFF_HOURS");
+  return { utcHour, active };
+}
+
+function filterTradesBySession(sessionKey) {
+  state.route = "trades";
+  location.hash = "#trades";
+  setTimeout(() => {
+    const searchInput = document.getElementById("trades-search");
+    if (searchInput) {
+      searchInput.value = sessionKey;
+      state.tradeFilter.search = sessionKey;
+      renderTradesTable();
+    }
+  }, 100);
+}
+
+function renderSessionMatrix(bySession) {
+  if (!bySession) return "";
+  const { utcHour, active } = getLiveSessionStatus();
+  const utcStr = String(utcHour).padStart(2, "0") + ":" + String(new Date().getUTCMinutes()).padStart(2, "0") + " UTC";
+
+  const cardsHtml = ["ASIA", "LONDON", "NEW_YORK", "OVERLAP", "OFF_HOURS"].map((sKey) => {
+    const meta = SESSIONS_META[sKey];
+    const m = bySession[sKey] || {};
+    const trades = m.total_trades || 0;
+    const isLive = active.includes(sKey);
+    const winRate = m.win_rate !== undefined ? (m.win_rate * 100).toFixed(0) : 0;
+    const netProf = m.net_profit || 0;
+    const expR = m.expectancy_r || 0;
+    const pf = m.profit_factor !== null && m.profit_factor !== undefined ? fmtNum(m.profit_factor) : "—";
+
+    return `
+      <div class="session-card ${isLive ? 'session-live' : ''}">
+        <div class="session-card-header">
+          <div>
+            <div class="session-name">${meta.icon} ${meta.name}</div>
+            <div class="session-hours">${meta.hours}</div>
+          </div>
+          <span class="session-status-badge ${isLive ? 'badge-live' : 'badge-closed'}">
+            ${isLive ? '● ACTIVE' : 'CLOSED'}
+          </span>
+        </div>
+
+        <div class="session-metrics-grid">
+          <div class="session-metric">
+            <span class="lbl">Trades</span>
+            <strong class="val">${trades}</strong>
+          </div>
+          <div class="session-metric">
+            <span class="lbl">Win Rate</span>
+            <strong class="val ${winRate >= 50 ? 'win' : (trades > 0 ? 'loss' : '')}">${trades > 0 ? winRate + '%' : '—'}</strong>
+          </div>
+          <div class="session-metric">
+            <span class="lbl">Net P/L</span>
+            <strong class="val ${netProf >= 0 ? 'win' : 'loss'}">${trades > 0 ? fmtNum(netProf) : '—'}</strong>
+          </div>
+          <div class="session-metric">
+            <span class="lbl">Expectancy R</span>
+            <strong class="val ${expR >= 0 ? 'win' : 'loss'}">${trades > 0 ? fmtNum(expR, 2) + ' R' : '—'}</strong>
+          </div>
+        </div>
+
+        <div class="session-footer">
+          <span class="dim">${meta.desc} · PF: <b>${pf}</b></span>
+          ${trades > 0 ? `<button class="btn btn-sm btn-subtle" onclick="filterTradesBySession('${sKey}')" style="padding:2px 8px;font-size:10.5px">View Trades</button>` : ''}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="card session-matrix-card" style="margin-top:12px">
+      <div class="card-header-row">
+        <div>
+          <div class="card-title">Global Trading Sessions Performance Matrix</div>
+          <div class="card-sub">Real-time market clock & historical profitability across global interbank sessions</div>
+        </div>
+        <div class="session-clock-pill">
+          <span class="clock-icon">🕒</span>
+          <span>Market Clock: <b>${utcStr}</b></span>
+          <span class="active-tag">${active.length ? active.join(" & ") : "OFF HOURS"}</span>
+        </div>
+      </div>
+      <div class="session-cards-grid">
+        ${cardsHtml}
+      </div>
+    </div>
+  `;
+}
+
 async function viewBreakdowns() {
   content().innerHTML = `<div id="bd-body">Loading…</div>`;
   let b;
@@ -3069,6 +3175,7 @@ async function viewBreakdowns() {
           <div class="card-title" style="margin-bottom:4px">Hourly P/L & Distribution (24-Hour Cycle)</div>
           <canvas id="hourly-bar-canvas" class="hourly-bar-canvas"></canvas>
         </div>
+        ${renderSessionMatrix(b.by_session)}
         ${breakdownTable("By Trading Session", b.by_session)}
         ${breakdownTable("By Day of Week", b.by_weekday)}
       </div>
@@ -5691,6 +5798,25 @@ function renderTradeDrawerContent(t) {
   const sign = pl >= 0 ? "+" : "";
   const netR = t.realized_r !== null && t.realized_r !== undefined ? `${t.realized_r >= 0 ? "+" : ""}${fmtNum(t.realized_r, 2)} R` : "—";
 
+  let durationStr = "—";
+  if (t.open_time && t.close_time) {
+    const openMs = new Date(t.open_time).getTime();
+    const closeMs = new Date(t.close_time).getTime();
+    if (!isNaN(openMs) && !isNaN(closeMs) && closeMs >= openMs) {
+      const diffSec = Math.floor((closeMs - openMs) / 1000);
+      const days = Math.floor(diffSec / 86400);
+      const hrs = Math.floor((diffSec % 86400) / 3600);
+      const mins = Math.floor((diffSec % 3600) / 60);
+      if (days > 0) durationStr = `${days}d ${hrs}h ${mins}m`;
+      else if (hrs > 0) durationStr = `${hrs}h ${mins}m`;
+      else durationStr = `${mins}m ${diffSec % 60}s`;
+    }
+  }
+
+  const rrCaptureStr = (t.planned_rr && t.realized_r !== null && t.realized_r !== undefined && t.planned_rr > 0)
+    ? `${((t.realized_r / t.planned_rr) * 100).toFixed(1)}%`
+    : "—";
+
   const stratOptions = `<option value="">None (Unassigned)</option>` + state.strategies.map((s) =>
     `<option value="${s.id}" ${t.strategy_id === s.id ? "selected" : ""}>${esc(s.name)}</option>`
   ).join("");
@@ -5764,6 +5890,7 @@ function renderTradeDrawerContent(t) {
         <div class="drawer-meta-sub">Position #${t.position_id || t.id} · Ticket #${t.id} · ${fmtDate(t.open_time)}</div>
       </div>
       <div class="drawer-header-actions">
+        <button class="btn btn-sm" id="drawer-btn-copy-ai-prompt" title="Copy comprehensive prompt for LLM trade debrief">🤖 AI Audit Prompt</button>
         <button class="btn btn-sm btn-primary" id="drawer-btn-chart" title="Replay candlestick chart for this trade">📈 Replay Chart</button>
         <button class="btn btn-sm" id="drawer-close-btn" title="Close (Esc)" aria-label="Close drawer">✕</button>
       </div>
@@ -5827,6 +5954,14 @@ function renderTradeDrawerContent(t) {
             <span class="drawer-field-val mono">${fmtNum(t.profit)} / ${fmtNum(t.swap || 0)} / ${fmtNum(t.commission || 0)}</span>
           </div>
           <div class="drawer-field">
+            <span class="drawer-field-lbl">Holding Duration</span>
+            <span class="drawer-field-val mono">${durationStr}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-lbl">R:R Capture Efficiency</span>
+            <span class="drawer-field-val mono">${rrCaptureStr}</span>
+          </div>
+          <div class="drawer-field">
             <span class="drawer-field-lbl">Status</span>
             <span class="drawer-field-val"><span class="pill ${t.status === 'CLOSED' ? 'buy' : 'neutral'}">${t.status || 'CLOSED'}</span></span>
           </div>
@@ -5887,6 +6022,47 @@ function renderTradeDrawerContent(t) {
 
   // Attach interactive listeners inside drawer
   document.getElementById("drawer-close-btn").addEventListener("click", closeTradeDrawer);
+
+  const copyAiPromptBtn = document.getElementById("drawer-btn-copy-ai-prompt");
+  if (copyAiPromptBtn) {
+    copyAiPromptBtn.addEventListener("click", () => {
+      const stratObj = state.strategies.find((s) => s.id === t.strategy_id);
+      const stratName = stratObj ? stratObj.name : "Unassigned";
+      const flagsText = (t.auto_behavior_flags || []).map((f) => f.flag_type).join(", ") || "None";
+      const slModText = (t.sl_history || []).map((s) => `  - ${fmtDate(s.timestamp)}: SL ${s.old_sl !== null ? fmtNum(s.old_sl, 5) : 'None'} ➔ ${fmtNum(s.new_sl, 5)}${s.change_reason ? ' (' + s.change_reason + ')' : ''}`).join("\n") || "  None";
+
+      const promptText = `Please analyze and audit this MT5 trade execution:
+Symbol: ${t.symbol}
+Direction: ${t.direction}
+Outcome: ${t.profit >= 0 ? "WIN" : "LOSS"} ($${fmtNum(t.profit)})
+Net R: ${t.realized_r !== null ? t.realized_r.toFixed(2) + "R" : "N/A"} (Planned R:R: ${t.planned_rr ? t.planned_rr.toFixed(2) + ":1" : "N/A"}, Capture Efficiency: ${rrCaptureStr})
+Volume: ${fmtVolume(t.volume)} lots
+Opened: ${fmtDate(t.open_time)} @ ${fmtNum(t.open_price, 5)}
+Closed: ${t.close_time ? fmtDate(t.close_time) : "N/A"} @ ${t.close_price !== null ? fmtNum(t.close_price, 5) : "N/A"}
+Duration: ${durationStr}
+Initial SL: ${t.initial_sl ? fmtNum(t.initial_sl, 5) : "None"}, Initial TP: ${t.initial_tp ? fmtNum(t.initial_tp, 5) : "None"}
+Assigned Strategy: ${stratName}
+Rule Compliance: ${t.compliance_status || "UNCHECKED"}${t.deviation_reason ? " (Deviation: " + t.deviation_reason + ")" : ""}
+Emotional State: ${t.emotion_tag || "None"}
+Behavioral Flags: ${flagsText}
+Trader Notes: ${t.behavior_notes || "None"}
+
+Stop-Loss Trailing & Modifications:
+${slModText}
+
+Please provide an objective audit of:
+1. Entry quality & risk-reward structure.
+2. Trade management & discipline (SL modifications, execution vs. plan).
+3. Psychological or emotional vulnerabilities indicated by the execution.
+4. Specific, actionable adjustments for future setups.`;
+
+      navigator.clipboard.writeText(promptText).then(() => {
+        showTransientBanner("📋 AI Trade Audit Prompt copied to clipboard!", true);
+      }).catch(() => {
+        showTransientBanner("Could not copy prompt to clipboard.", false);
+      });
+    });
+  }
 
   document.getElementById("drawer-btn-chart").addEventListener("click", () => {
     closeTradeDrawer();

@@ -4,6 +4,9 @@
 
 ### Added
 
+- Global Trading Sessions Performance Matrix and live market clock hub in the Breakdowns view (`#breakdowns`) covering Asia, London, New York, London/NY Overlap, and Off-Hours sessions with real-time active indicators, win rates, net P/L, expectancy R, and 1-click drill-down filtering to the trades ledger.
+- Single-trade AI Audit Prompt generator button (`#drawer-btn-copy-ai-prompt`) in the Trade Inspection Drawer, synthesizing structured MT5 order data, lifecycle SL modifications, rule compliance, and emotion tags for instant external LLM analysis.
+- Trade holding duration formatting and planned vs. realized R:R capture efficiency indicators in the Trade Inspection Drawer execution section.
 - What-If "Discipline Edge" cumulative equity curves in Strategy vs Trader (`#svt-equity-canvas`) contrasting Actual Realized trajectory against Compliant Rule-Strict and No-Bad-Losses counterfactuals.
 - Discipline Alpha quantification measuring the recoverable net R and monetary gain achievable by eliminating Quadrant IV unforced errors.
 - Time-series trajectory generation in `StrategyTraderComparator` tracking actual, compliant, and no-bad-losses cumulative R curves step-by-step.
