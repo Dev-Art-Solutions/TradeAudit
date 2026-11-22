@@ -4,6 +4,8 @@
 
 ### Added
 
+- Institutional Risk-Adjusted Performance Ratios suite in Quant & Risk (`#quant`) computing R-multiple Sharpe Ratio, downside-volatility Sortino Ratio, Calmar Ratio (Net R / Max Drawdown R), and mathematical Kelly Criterion / Half-Kelly optimal capital allocation.
+- Interactive Rolling Window Edge & Expectancy Progression Canvas (`#rolling-edge-canvas`) plotting sliding window expectancy evolution across trade history with zero baseline, positive/negative shaded bands, crosshair tooltips, and 20/50/100 trade window switcher.
 - Global Trading Sessions Performance Matrix and live market clock hub in the Breakdowns view (`#breakdowns`) covering Asia, London, New York, London/NY Overlap, and Off-Hours sessions with real-time active indicators, win rates, net P/L, expectancy R, and 1-click drill-down filtering to the trades ledger.
 - Single-trade AI Audit Prompt generator button (`#drawer-btn-copy-ai-prompt`) in the Trade Inspection Drawer, synthesizing structured MT5 order data, lifecycle SL modifications, rule compliance, and emotion tags for instant external LLM analysis.
 - Trade holding duration formatting and planned vs. realized R:R capture efficiency indicators in the Trade Inspection Drawer execution section.

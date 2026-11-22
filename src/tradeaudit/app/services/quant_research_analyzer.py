@@ -583,6 +583,12 @@ class QuantResearchAnalyzer:
         cvar_95 = None
         var_99 = None
         cvar_99 = None
+        sharpe_r = None
+        sortino_r = None
+        calmar_r = None
+        kelly_pct = None
+        half_kelly_pct = None
+
         if closed_with_r:
             r_vals = sorted([float(t.realized_r) for t in closed_with_r])
             var_95 = round(self._percentile(r_vals, 5.0), 3)
@@ -591,6 +597,62 @@ class QuantResearchAnalyzer:
             cvar_95 = round(sum(cvar_95_vals) / len(cvar_95_vals), 3) if cvar_95_vals else var_95
             cvar_99_vals = [r for r in r_vals if r <= var_99]
             cvar_99 = round(sum(cvar_99_vals) / len(cvar_99_vals), 3) if cvar_99_vals else var_99
+
+            r_vals_chron = [float(t.realized_r) for t in closed_with_r]
+            mean_r = sum(r_vals_chron) / len(r_vals_chron)
+
+            # Sharpe Ratio (R-multiple based)
+            if len(r_vals_chron) >= 2:
+                std_r = statistics.stdev(r_vals_chron)
+                sharpe_r = round(mean_r / std_r, 3) if std_r > 1e-6 else 0.0
+            else:
+                sharpe_r = 0.0
+
+            # Sortino Ratio (R-multiple downside risk deviation)
+            neg_r = [r for r in r_vals_chron if r < 0]
+            if neg_r:
+                downside_dev = math.sqrt(sum(r ** 2 for r in neg_r) / len(r_vals_chron))
+                sortino_r = round(mean_r / downside_dev, 3) if downside_dev > 1e-6 else 0.0
+            else:
+                sortino_r = 99.9 if mean_r > 0 else 0.0
+
+            # Calmar Ratio (Net R / Historical Max Drawdown R)
+            cum_r = 0.0
+            peak_r = 0.0
+            hist_mdd_r = 0.0
+            for r in r_vals_chron:
+                cum_r += r
+                if cum_r > peak_r:
+                    peak_r = cum_r
+                dd = peak_r - cum_r
+                if dd > hist_mdd_r:
+                    hist_mdd_r = dd
+            net_r = sum(r_vals_chron)
+            if hist_mdd_r > 1e-4:
+                calmar_r = round(net_r / hist_mdd_r, 3)
+            else:
+                calmar_r = round(net_r, 3) if net_r > 0 else 0.0
+
+            # Kelly Criterion & Half-Kelly
+            pos_r = [r for r in r_vals_chron if r > 0]
+            if pos_r and neg_r:
+                p_win = len(pos_r) / len(r_vals_chron)
+                avg_win = sum(pos_r) / len(pos_r)
+                avg_loss = abs(sum(neg_r) / len(neg_r))
+                payoff_b = avg_win / avg_loss if avg_loss > 1e-6 else 0.0
+                if payoff_b > 0:
+                    k = (p_win * (payoff_b + 1.0) - 1.0) / payoff_b
+                    kelly_pct = round(max(0.0, k) * 100.0, 1)
+                    half_kelly_pct = round(kelly_pct / 2.0, 1)
+                else:
+                    kelly_pct = 0.0
+                    half_kelly_pct = 0.0
+            elif pos_r and not neg_r:
+                kelly_pct = 100.0
+                half_kelly_pct = 50.0
+            else:
+                kelly_pct = 0.0
+                half_kelly_pct = 0.0
 
         return QuantResearchResult(
             monte_carlo=mc,
@@ -602,7 +664,12 @@ class QuantResearchAnalyzer:
             var_95_r=var_95,
             cvar_95_r=cvar_95,
             var_99_r=var_99,
-            cvar_99_r=cvar_99
+            cvar_99_r=cvar_99,
+            sharpe_ratio_r=sharpe_r,
+            sortino_ratio_r=sortino_r,
+            calmar_ratio_r=calmar_r,
+            kelly_criterion_pct=kelly_pct,
+            half_kelly_pct=half_kelly_pct
         )
 
     @staticmethod

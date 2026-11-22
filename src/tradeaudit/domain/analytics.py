@@ -192,5 +192,10 @@ class QuantResearchResult:
     cvar_95_r: Optional[float] = None
     var_99_r: Optional[float] = None
     cvar_99_r: Optional[float] = None
+    sharpe_ratio_r: Optional[float] = None
+    sortino_ratio_r: Optional[float] = None
+    calmar_ratio_r: Optional[float] = None
+    kelly_criterion_pct: Optional[float] = None
+    half_kelly_pct: Optional[float] = None
 
 

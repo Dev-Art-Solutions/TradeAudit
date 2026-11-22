@@ -208,3 +208,31 @@ def test_quant_research_shuffle_sampling_method(analyzer, sample_winning_trades)
     assert master.monte_carlo.sampling_method == "shuffle_without_replacement"
     assert master.monte_carlo.horizon_trades == 20
     assert master.monte_carlo.simulations_count == 150
+
+
+def test_quant_research_risk_adjusted_ratios_and_kelly(analyzer, sample_winning_trades, sample_losing_trades):
+    winning_master = analyzer.analyze_quant_research(
+        sample_winning_trades,
+        num_simulations=50,
+        random_seed=42
+    )
+
+    assert winning_master.sharpe_ratio_r is not None
+    assert winning_master.sharpe_ratio_r > 0.4
+    assert winning_master.sortino_ratio_r is not None
+    assert winning_master.sortino_ratio_r > winning_master.sharpe_ratio_r
+    assert winning_master.calmar_ratio_r is not None
+    assert winning_master.calmar_ratio_r > 0.0
+    assert winning_master.kelly_criterion_pct == 40.0
+    assert winning_master.half_kelly_pct == 20.0
+
+    losing_master = analyzer.analyze_quant_research(
+        sample_losing_trades,
+        num_simulations=50,
+        random_seed=42
+    )
+
+    assert losing_master.sharpe_ratio_r is not None
+    assert losing_master.sharpe_ratio_r < 0.0
+    assert losing_master.kelly_criterion_pct == 0.0
+    assert losing_master.half_kelly_pct == 0.0

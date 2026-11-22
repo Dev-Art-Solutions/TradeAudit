@@ -4198,6 +4198,8 @@ async function renderQuantView() {
     </div>
     ` : ''}
 
+    ${renderRiskAdjustedRatiosCard(q)}
+
     <div class="card" style="margin-top:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <div class="card-title" style="margin:0">Institutional Tail Risk & Value at Risk (VaR / CVaR)</div>
@@ -4246,7 +4248,7 @@ async function renderQuantView() {
       <ul class="kpi-sub" style="margin-top:8px">${(ror.assumptions || []).map((a) => `<li>${esc(a)}</li>`).join("")}</ul>
     </div>
 
-    ${renderRollingTable(q.rolling_analytics)}
+    ${renderRollingAnalyticsSection(q.rolling_analytics)}
   `;
 
   const canvas = document.getElementById("mc-cone-canvas");
@@ -4256,6 +4258,81 @@ async function renderQuantView() {
       const c = document.getElementById("mc-cone-canvas");
       if (c) drawMonteCarloCone(c, mc);
     }, { once: true });
+  }
+
+  const rollingCanvas = document.getElementById("rolling-edge-canvas");
+  if (rollingCanvas && q.rolling_analytics) {
+    const rollingData = q.rolling_analytics;
+    const getActivePoints = () => (rollingData[currentRollingWindow] || {}).points || [];
+
+    const drawCurrentRolling = (hoverIdx = -1) => {
+      drawRollingEdgeCanvas(rollingCanvas, getActivePoints(), hoverIdx);
+    };
+
+    drawCurrentRolling();
+    window.addEventListener("resize", () => {
+      drawCurrentRolling();
+    }, { once: true });
+
+    document.querySelectorAll(".rolling-window-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".rolling-window-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentRollingWindow = parseInt(btn.dataset.w, 10);
+        const curRes = rollingData[currentRollingWindow] || {};
+        const vPill = document.getElementById("rolling-edge-verdict-pill");
+        if (vPill) {
+          vPill.textContent = curRes.edge_stability_verdict || "STABLE";
+          vPill.className = `pill ${curRes.edge_stability_verdict === "HIGHLY_STABLE_EDGE" ? "win" : "neutral"}`;
+        }
+        const wLbl = document.getElementById("rolling-active-window-lbl");
+        if (wLbl) wLbl.textContent = `${currentRollingWindow} Trades`;
+        const sLbl = document.getElementById("rolling-stability-score-lbl");
+        if (sLbl) sLbl.textContent = fmtNum(curRes.stability_score || 0, 2);
+        const tLbl = document.getElementById("rolling-trend-lbl");
+        if (tLbl) tLbl.textContent = curRes.current_expectancy_trend || "STABLE";
+
+        drawCurrentRolling();
+      });
+    });
+
+    const tip = document.getElementById("rolling-tooltip");
+    rollingCanvas.addEventListener("mousemove", (e) => {
+      const rect = rollingCanvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const pts = getActivePoints();
+      if (!pts || pts.length < 2) return;
+
+      const pad = { left: 45, right: 25 };
+      const chartW = rect.width - pad.left - pad.right;
+      if (mouseX < pad.left || mouseX > rect.width - pad.right) {
+        if (tip) tip.style.display = "none";
+        drawCurrentRolling(-1);
+        return;
+      }
+
+      const ratio = (mouseX - pad.left) / chartW;
+      const idx = Math.max(0, Math.min(pts.length - 1, Math.round(ratio * (pts.length - 1))));
+      const pt = pts[idx];
+
+      drawCurrentRolling(idx);
+
+      if (tip && pt) {
+        tip.style.display = "block";
+        tip.style.left = `${Math.min(rect.width - 170, Math.max(10, mouseX - 60))}px`;
+        tip.style.top = `${Math.max(10, e.clientY - rect.top - 55)}px`;
+        tip.innerHTML = `
+          <div style="font-weight:700;margin-bottom:2px">Trade #${pt.trade_index || idx} ${pt.ticket ? `(#${pt.ticket})` : ''}</div>
+          <div>Expectancy: <b class="${pt.expectancy_r >= 0 ? 'win' : 'loss'}">${pt.expectancy_r >= 0 ? '+' : ''}${fmtNum(pt.expectancy_r, 2)} R</b></div>
+          <div>Win Rate: <b>${fmtNum(pt.win_rate, 1)}%</b> · MDD: <b>${fmtNum(pt.max_drawdown_r, 1)}R</b></div>
+        `;
+      }
+    });
+
+    rollingCanvas.addEventListener("mouseleave", () => {
+      if (tip) tip.style.display = "none";
+      drawCurrentRolling(-1);
+    });
   }
 
   // Wire simulation controls
@@ -4309,16 +4386,250 @@ async function renderQuantView() {
   }
 }
 
-function renderRollingTable(rolling) {
-  const windows = Object.keys(rolling || {});
+function renderRiskAdjustedRatiosCard(q) {
+  if (!q) return "";
+  const sharpe = q.sharpe_ratio_r;
+  const sortino = q.sortino_ratio_r;
+  const calmar = q.calmar_ratio_r;
+  const kelly = q.kelly_criterion_pct;
+  const halfKelly = q.half_kelly_pct;
+
+  const edgeQuality = (sharpe !== null && sharpe >= 0.20)
+    ? { tag: "⭐ Institutional Edge", cls: "win" }
+    : (sharpe !== null && sharpe > 0)
+    ? { tag: "✅ Positive Edge", cls: "win" }
+    : { tag: "⚠️ Sub-Optimal Edge", cls: "warn" };
+
+  return `
+    <div class="card quant-ratios-card" style="margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div class="card-title" style="margin:0">Institutional Risk-Adjusted Ratios & Kelly Allocation</div>
+        <span class="pill ${edgeQuality.cls}">${edgeQuality.tag}</span>
+      </div>
+      <div class="grid grid-5 quant-ratios-grid">
+        <div class="kpi">
+          <div class="kpi-label">Sharpe Ratio (R)</div>
+          <div class="kpi-value ${sharpe !== null && sharpe > 0 ? 'win' : (sharpe !== null && sharpe < 0 ? 'loss' : '')}">
+            ${sharpe !== null ? fmtNum(sharpe, 2) : '—'}
+          </div>
+          <div class="kpi-sub">Mean R / StdDev R per trade</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Sortino Ratio (R)</div>
+          <div class="kpi-value ${sortino !== null && sortino > 0 ? 'win' : (sortino !== null && sortino < 0 ? 'loss' : '')}">
+            ${sortino !== null ? fmtNum(sortino, 2) : '—'}
+          </div>
+          <div class="kpi-sub">Downside volatility risk-adjusted</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Calmar Ratio (R)</div>
+          <div class="kpi-value ${calmar !== null && calmar > 0 ? 'win' : ''}">
+            ${calmar !== null ? fmtNum(calmar, 2) : '—'}
+          </div>
+          <div class="kpi-sub">Total Net R / Max Drawdown R</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Full Kelly Criterion (f*)</div>
+          <div class="kpi-value ${kelly !== null && kelly > 0 ? 'win' : ''}">
+            ${kelly !== null ? fmtNum(kelly, 1) + '%' : '—'}
+          </div>
+          <div class="kpi-sub">Theoretical optimal growth sizing</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Recommended Half-Kelly</div>
+          <div class="kpi-value ${halfKelly !== null && halfKelly > 0 ? 'win' : ''}">
+            ${halfKelly !== null ? fmtNum(halfKelly, 1) + '%' : '—'}
+          </div>
+          <div class="kpi-sub">Institutional risk-safe allocation</div>
+        </div>
+      </div>
+      <div class="kpi-sub" style="margin-top:10px;font-size:11.5px">
+        💡 <b>Half-Kelly Criterion</b> is standard among top hedge funds to protect against non-normal distributions and sequence risk while retaining ~75% of full Kelly growth rate.
+      </div>
+    </div>
+  `;
+}
+
+let currentRollingWindow = 20;
+
+function drawRollingEdgeCanvas(canvas, points, hoveredIdx = -1) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  if (!points || points.length < 2) {
+    ctx.fillStyle = "#6e7681";
+    ctx.font = "12px Segoe UI";
+    ctx.fillText("Insufficient rolling window trade points (need at least window size trades).", 16, h / 2);
+    return;
+  }
+
+  const expVals = points.map((p) => p.expectancy_r);
+  const minVal = Math.min(...expVals, -0.2);
+  const maxVal = Math.max(...expVals, 0.4);
+  const range = (maxVal - minVal) || 1;
+
+  const pad = { top: 20, bottom: 25, left: 45, right: 25 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+
+  function getX(i) {
+    return pad.left + (i / (points.length - 1)) * chartW;
+  }
+  function getY(val) {
+    return pad.top + chartH - ((val - minVal) / range) * chartH;
+  }
+
+  // Zero Expectancy Baseline
+  const zeroY = getY(0);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(pad.left, zeroY);
+  ctx.lineTo(pad.left + chartW, zeroY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Shaded positive/negative area under curve
+  ctx.beginPath();
+  ctx.moveTo(getX(0), zeroY);
+  for (let i = 0; i < points.length; i++) {
+    ctx.lineTo(getX(i), getY(points[i].expectancy_r));
+  }
+  ctx.lineTo(getX(points.length - 1), zeroY);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + chartH);
+  grad.addColorStop(0, "rgba(38, 166, 154, 0.25)");
+  grad.addColorStop(0.5, "rgba(88, 166, 255, 0.15)");
+  grad.addColorStop(1, "rgba(239, 83, 80, 0.2)");
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Expectancy Curve Line
+  ctx.strokeStyle = "#58a6ff";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  for (let i = 0; i < points.length; i++) {
+    const x = getX(i);
+    const y = getY(points[i].expectancy_r);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Axis and Grid Lines
+  ctx.fillStyle = "#8b949e";
+  ctx.font = "10px Segoe UI";
+  ctx.textAlign = "right";
+  ctx.fillText("0.0R", pad.left - 6, zeroY + 3);
+  ctx.fillText(fmtNum(maxVal, 2) + "R", pad.left - 6, pad.top + 10);
+  ctx.fillText(fmtNum(minVal, 2) + "R", pad.left - 6, pad.top + chartH);
+
+  ctx.textAlign = "left";
+  ctx.fillText(`Trade #${points[0].trade_index || 0}`, pad.left, h - 8);
+  ctx.textAlign = "right";
+  ctx.fillText(`Trade #${points[points.length - 1].trade_index || points.length}`, pad.left + chartW, h - 8);
+
+  // Crosshair when hovering
+  if (hoveredIdx >= 0 && hoveredIdx < points.length) {
+    const hx = getX(hoveredIdx);
+    const hy = getY(points[hoveredIdx].expectancy_r);
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(hx, pad.top);
+    ctx.lineTo(hx, pad.top + chartH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = "#e3b341";
+    ctx.beginPath();
+    ctx.arc(hx, hy, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
+function renderRollingAnalyticsSection(rolling) {
+  const windows = Object.keys(rolling || {}).map(Number).sort((a, b) => a - b);
   if (!windows.length) return "";
+
+  if (!windows.includes(currentRollingWindow)) {
+    currentRollingWindow = windows[0];
+  }
+
+  const activeRes = rolling[currentRollingWindow] || rolling[windows[0]] || {};
+
   const rows = windows.map((w) => {
-    const r = rolling[w];
-    return `<tr><td class="mono">${w}</td><td class="mono">${fmtNum(r.stability_score, 2)}</td><td>${esc(r.edge_stability_verdict)}</td><td>${esc(r.current_expectancy_trend)}</td></tr>`;
+    const r = rolling[w] || {};
+    return `
+      <tr>
+        <td class="mono"><b>Window ${w}</b></td>
+        <td><span class="pill ${r.edge_stability_verdict === 'HIGHLY_STABLE_EDGE' ? 'win' : (r.edge_stability_verdict === 'MODERATE_STABILITY_EDGE' ? 'neutral' : 'warn')}">${esc(r.edge_stability_verdict || 'N/A')}</span></td>
+        <td class="mono">${fmtNum(r.stability_score || 0, 2)}</td>
+        <td><b>${esc(r.current_expectancy_trend || 'STABLE')}</b></td>
+        <td class="mono">${(r.points || []).length} trades</td>
+      </tr>
+    `;
   }).join("");
-  return `<div class="card"><div class="card-title">Rolling Window Stability</div>
-    <div class="table-wrap" style="max-height:220px"><table><thead><tr><th>Window</th><th>Stability Score</th><th>Verdict</th><th>Trend</th></tr></thead>
-    <tbody>${rows}</tbody></table></div></div>`;
+
+  return `
+    <div class="card" style="margin-top:16px" id="rolling-analytics-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div>
+          <div class="card-title" style="margin:0">Rolling Window Edge & Expectancy Progression</div>
+          <div class="card-sub" style="margin-top:2px">Sliding window trajectory tracking edge decay, improvement, and consistency over trade history</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="rolling-window-toggle">
+            ${windows.map((w) => `
+              <button class="btn btn-sm btn-subtle rolling-window-btn ${w === currentRollingWindow ? 'active' : ''}" data-w="${w}">
+                Window ${w}
+              </button>
+            `).join("")}
+          </div>
+          <span class="pill ${activeRes.edge_stability_verdict === 'HIGHLY_STABLE_EDGE' ? 'win' : 'neutral'}" id="rolling-edge-verdict-pill">
+            ${esc(activeRes.edge_stability_verdict || 'STABLE')}
+          </span>
+        </div>
+      </div>
+
+      <div style="position:relative">
+        <canvas id="rolling-edge-canvas" class="rolling-edge-canvas"></canvas>
+        <div id="rolling-tooltip" class="chart-tooltip" style="display:none;position:absolute;pointer-events:none;z-index:10;background:#161b22;border:1px solid #30363d;border-radius:4px;padding:6px 10px;font-size:11px;color:#c9d1d9;box-shadow:0 4px 12px rgba(0,0,0,0.4)"></div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:12px;padding:8px 12px;background:rgba(255,255,255,0.02);border:1px solid var(--border-soft);border-radius:var(--radius-sm)">
+        <div style="font-size:12px">
+          <span>Active Window: <b id="rolling-active-window-lbl">${currentRollingWindow} Trades</b></span> ·
+          <span>Stability Score: <b id="rolling-stability-score-lbl">${fmtNum(activeRes.stability_score || 0, 2)}</b></span> ·
+          <span>Trend: <b id="rolling-trend-lbl">${esc(activeRes.current_expectancy_trend || 'STABLE')}</b></span>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim)">
+          🟢 Positive Edge Band · 🔴 Negative Expectancy Band · Baseline 0.00 R
+        </div>
+      </div>
+
+      <div class="table-wrap" style="max-height:160px;margin-top:12px">
+        <table>
+          <thead>
+            <tr><th>Window Size</th><th>Edge Verdict</th><th>Stability Score</th><th>Trend</th><th>Data Points</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 // ------------------------------------------------------------------ trade chart

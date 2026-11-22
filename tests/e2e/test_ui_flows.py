@@ -370,7 +370,19 @@ def test_quant_view_monte_carlo_cone_and_confidence_intervals(page, live_server,
     page.click("#btn-preset-propfirm")
     page.wait_for_selector("text=Applied Prop Firm", timeout=5000)
     assert page.input_value("#mc-input-ruin") == "10"
-    assert page.input_value("#mc-input-target") == "10" 
+    assert page.input_value("#mc-input-target") == "10"
+
+    # Verify Institutional Risk-Adjusted Ratios & Kelly Allocation card
+    assert page.is_visible("text=Institutional Risk-Adjusted Ratios & Kelly Allocation")
+    assert page.is_visible("text=Sharpe Ratio (R)")
+    assert page.is_visible("text=Recommended Half-Kelly")
+
+    # Verify Rolling Window Edge & Expectancy Progression Canvas and switcher
+    assert page.is_visible("#rolling-edge-canvas")
+    assert page.locator(".rolling-window-btn").count() >= 3
+    page.click('.rolling-window-btn[data-w="50"]')
+    page.wait_for_timeout(200)
+    assert "50 Trades" in page.text_content("#rolling-active-window-lbl")
 
 
 def test_breakdowns_view_dimensions_and_hourly_chart(page, live_server, seeded_trade):
