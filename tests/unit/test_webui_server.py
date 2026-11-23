@@ -946,3 +946,18 @@ def test_quant_endpoint_with_custom_scenarios(client, existing_trade_id):
     assert "cvar_95_r" in data
     assert "var_99_r" in data
     assert "cvar_99_r" in data
+
+
+def test_live_journal_summary_metrics(client):
+    res = client.get("/api/live-journal/positions")
+    assert res.status_code == 200
+    data = res.json()
+    assert "summary" in data
+    summary = data["summary"]
+    assert "count" in summary
+    assert "total_profit" in summary
+    assert "total_swap" in summary
+    assert "total_volume" in summary
+    assert "unprotected_count" in summary
+    assert summary["count"] == 0
+    assert summary["unprotected_count"] == 0

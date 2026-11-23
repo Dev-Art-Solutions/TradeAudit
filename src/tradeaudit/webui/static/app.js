@@ -812,6 +812,14 @@ async function viewTrades() {
         <button class="btn btn-primary" id="btn-sync"><span id="sync-spinner"></span> Sync History</button>
       </div>
     </div>
+    <div class="quick-filter-pills" id="trades-quick-filters">
+      <button class="pill-btn active" data-preset="ALL">All Trades</button>
+      <button class="pill-btn" data-preset="WIN">Winners 🟢</button>
+      <button class="pill-btn" data-preset="LOSS">Losers 🔴</button>
+      <button class="pill-btn" data-preset="VIOLATION">Rule Violations ⚠️</button>
+      <button class="pill-btn" data-preset="DISCIPLINED">Compliant 🎯</button>
+      <button class="pill-btn" data-preset="EMOTIONAL">Emotional / Tilt ⚡</button>
+    </div>
     <div class="filter-toolbar">
       <div class="search-box">
         <input type="text" id="trades-search" placeholder="🔍 Search symbol, comments, notes..." value="${esc(state.tradeFilter.search)}" />
@@ -887,8 +895,56 @@ async function viewTrades() {
     state.tradeFilter.direction = e.target.value;
     renderTradesTable();
   });
+  function syncQuickFilterPills() {
+    const pills = content().querySelectorAll(".quick-filter-pills .pill-btn");
+    pills.forEach((p) => {
+      const preset = p.dataset.preset;
+      let active = false;
+      if (preset === "ALL") active = state.tradeFilter.outcome === "ALL" && state.tradeFilter.compliance === "ALL" && state.tradeFilter.emotion === "ALL";
+      else if (preset === "WIN") active = state.tradeFilter.outcome === "WIN";
+      else if (preset === "LOSS") active = state.tradeFilter.outcome === "LOSS";
+      else if (preset === "VIOLATION") active = state.tradeFilter.compliance === "DEVIATION";
+      else if (preset === "DISCIPLINED") active = state.tradeFilter.compliance === "COMPLIANT";
+      else if (preset === "EMOTIONAL") active = state.tradeFilter.emotion === "EMOTIONAL";
+      p.classList.toggle("active", active);
+    });
+  }
+
+  const quickPillBtns = content().querySelectorAll(".quick-filter-pills .pill-btn");
+  quickPillBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const preset = btn.dataset.preset;
+      if (preset === "ALL") {
+        state.tradeFilter.outcome = "ALL";
+        state.tradeFilter.compliance = "ALL";
+        state.tradeFilter.emotion = "ALL";
+      } else if (preset === "WIN") {
+        state.tradeFilter.outcome = "WIN";
+      } else if (preset === "LOSS") {
+        state.tradeFilter.outcome = "LOSS";
+      } else if (preset === "VIOLATION") {
+        state.tradeFilter.compliance = "DEVIATION";
+      } else if (preset === "DISCIPLINED") {
+        state.tradeFilter.compliance = "COMPLIANT";
+      } else if (preset === "EMOTIONAL") {
+        state.tradeFilter.emotion = "EMOTIONAL";
+      }
+
+      const outSelect = document.getElementById("filter-outcome");
+      if (outSelect) outSelect.value = state.tradeFilter.outcome;
+      const compSelect = document.getElementById("filter-comp");
+      if (compSelect) compSelect.value = state.tradeFilter.compliance;
+      const emoSelect = document.getElementById("filter-emotion");
+      if (emoSelect) emoSelect.value = state.tradeFilter.emotion === "EMOTIONAL" ? "ALL" : state.tradeFilter.emotion;
+
+      syncQuickFilterPills();
+      renderTradesTable();
+    });
+  });
+
   document.getElementById("filter-outcome").addEventListener("change", (e) => {
     state.tradeFilter.outcome = e.target.value;
+    syncQuickFilterPills();
     renderTradesTable();
   });
   document.getElementById("filter-strat").addEventListener("change", (e) => {
@@ -897,10 +953,12 @@ async function viewTrades() {
   });
   document.getElementById("filter-comp").addEventListener("change", (e) => {
     state.tradeFilter.compliance = e.target.value;
+    syncQuickFilterPills();
     renderTradesTable();
   });
   document.getElementById("filter-emotion").addEventListener("change", (e) => {
     state.tradeFilter.emotion = e.target.value;
+    syncQuickFilterPills();
     renderTradesTable();
   });
 
@@ -925,7 +983,12 @@ function getFilteredTrades() {
     if (f.outcome === "LOSS" && pl >= 0) return false;
     if (f.outcome === "BE" && pl !== 0) return false;
     if (f.compliance !== "ALL" && (t.compliance_status || "UNCHECKED").toUpperCase() !== f.compliance) return false;
-    if (f.emotion !== "ALL" && (t.emotion_tag || "").toUpperCase() !== f.emotion) return false;
+    if (f.emotion === "EMOTIONAL") {
+      const em = (t.emotion_tag || "").toUpperCase();
+      if (!em || em === "CALM" || em === "DISCIPLINED") return false;
+    } else if (f.emotion !== "ALL" && (t.emotion_tag || "").toUpperCase() !== f.emotion) {
+      return false;
+    }
     if (f.symbol && f.symbol !== "ALL" && t.symbol !== f.symbol) return false;
     if (f.dateRange && f.dateRange !== "ALL") {
       const now = new Date();
@@ -3265,6 +3328,7 @@ async function viewLiveJournal() {
           <option value="10000">Every 10 sec</option>
           <option value="30000">Every 30 sec</option>
         </select>
+        <button class="btn" id="btn-copy-live-summary" title="Copy markdown summary of live positions and exposure to clipboard">📋 Copy Snapshot</button>
         <button class="btn btn-primary" id="btn-poll">🔄 Poll Positions</button>
       </div>
     </div>
@@ -3291,6 +3355,41 @@ async function viewLiveJournal() {
         <div class="lj-kpi-val" id="lj-kpi-protection">Standby</div>
         <div class="kpi-sub" id="lj-kpi-protection-sub">No open exposure</div>
       </div>
+    </div>
+
+    <!-- Real-Time Risk Exposure & Margin Safety Hub -->
+    <div class="lj-risk-hub" id="lj-risk-hub" style="margin-top: 12px;">
+      <div class="lj-hero-card">
+        <div class="kpi-label">Downside Risk at Stop-Loss</div>
+        <div class="lj-kpi-val mono" id="lj-kpi-downside-risk">—</div>
+        <div class="kpi-sub" id="lj-kpi-downside-sub">Aggregate SL distance</div>
+      </div>
+      <div class="lj-hero-card">
+        <div class="kpi-label">Upside Target Potential</div>
+        <div class="lj-kpi-val mono" id="lj-kpi-upside-reward">—</div>
+        <div class="kpi-sub" id="lj-kpi-upside-sub">Aggregate TP distance</div>
+      </div>
+      <div class="lj-hero-card">
+        <div class="kpi-label">Portfolio Open R:R</div>
+        <div class="lj-kpi-val" id="lj-kpi-open-rr">—</div>
+        <div class="kpi-sub" id="lj-kpi-open-rr-sub">Planned reward/risk</div>
+      </div>
+      <div class="lj-hero-card">
+        <div class="kpi-label">Net Market Bias</div>
+        <div class="lj-kpi-val" id="lj-kpi-bias">Neutral</div>
+        <div class="kpi-sub" id="lj-kpi-bias-sub">0.00 Lots delta</div>
+      </div>
+    </div>
+
+    <!-- Active Instrument Concentration & Allocation Radar -->
+    <div class="card" id="lj-allocation-card" style="margin-top: 16px;">
+      <div class="card-header-row">
+        <div>
+          <div class="card-title">Open Exposure & Instrument Allocation</div>
+          <div class="card-sub">Real-time volume weighting, net directional bias, and protection breakdown per instrument</div>
+        </div>
+      </div>
+      <div id="lj-allocation-body" style="margin-top: 10px;">Loading allocation…</div>
     </div>
 
     <!-- Active Open Positions Card -->
@@ -3322,6 +3421,10 @@ async function viewLiveJournal() {
   `;
 
   document.getElementById("btn-poll").addEventListener("click", () => pollLiveJournal(true));
+  const copyBtn = document.getElementById("btn-copy-live-summary");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", copyLiveJournalSummary);
+  }
 
   const intervalSelect = document.getElementById("lj-interval-select");
   if (state.liveJournalInterval) {
@@ -3397,6 +3500,7 @@ async function pollLiveJournal(isManual) {
   }
 
   renderLiveJournalHero();
+  renderLiveJournalAllocation();
   renderLiveJournalPositions();
   renderLiveJournalEvents();
 }
@@ -3445,6 +3549,181 @@ function renderLiveJournalHero() {
     protEl.className = "lj-kpi-val win";
     protSubEl.textContent = "All positions have hard SL";
   }
+
+  // Live Risk Hub metrics
+  const downRiskEl = document.getElementById("lj-kpi-downside-risk");
+  const downRiskSubEl = document.getElementById("lj-kpi-downside-sub");
+  const upRewardEl = document.getElementById("lj-kpi-upside-reward");
+  const upRewardSubEl = document.getElementById("lj-kpi-upside-sub");
+  const openRrEl = document.getElementById("lj-kpi-open-rr");
+  const openRrSubEl = document.getElementById("lj-kpi-open-rr-sub");
+  const biasEl = document.getElementById("lj-kpi-bias");
+  const biasSubEl = document.getElementById("lj-kpi-bias-sub");
+
+  if (downRiskEl) {
+    if (positions.length === 0) {
+      downRiskEl.textContent = "—";
+      downRiskEl.className = "lj-kpi-val mono";
+      downRiskSubEl.textContent = "No open exposure";
+      upRewardEl.textContent = "—";
+      upRewardSubEl.textContent = "No open targets";
+      openRrEl.textContent = "—";
+      openRrSubEl.textContent = "Planned reward/risk";
+      biasEl.textContent = "Neutral";
+      biasEl.className = "lj-kpi-val";
+      biasSubEl.textContent = "0.00 Lots delta";
+    } else {
+      let totalSlPts = 0;
+      let totalTpPts = 0;
+      let countWithSl = 0;
+      let countWithTp = 0;
+
+      positions.forEach((p) => {
+        const openPx = p.price_open || 0;
+        const sl = p.sl || 0;
+        const tp = p.tp || 0;
+        const vol = p.volume || 1;
+
+        if (sl > 0) {
+          totalSlPts += Math.abs(openPx - sl) * vol;
+          countWithSl++;
+        }
+        if (tp > 0) {
+          totalTpPts += Math.abs(tp - openPx) * vol;
+          countWithTp++;
+        }
+      });
+
+      if (unprotected.length > 0) {
+        downRiskEl.innerHTML = `<span class="loss">⚠️ Uncapped (${unprotected.length} no SL)</span>`;
+        downRiskSubEl.textContent = countWithSl > 0 ? `${fmtNum(totalSlPts, 2)} pts on protected` : "No positions have SL";
+      } else {
+        downRiskEl.innerHTML = `<span class="win">🛡️ ${fmtNum(totalSlPts, 2)} pts</span>`;
+        downRiskSubEl.textContent = `All ${positions.length} orders protected`;
+      }
+
+      upRewardEl.textContent = countWithTp > 0 ? `${fmtNum(totalTpPts, 2)} pts` : "—";
+      upRewardSubEl.textContent = countWithTp > 0 ? `${countWithTp}/${positions.length} with TP targets` : "No open TP targets";
+
+      if (totalSlPts > 0 && totalTpPts > 0) {
+        const rr = (totalTpPts / totalSlPts).toFixed(2);
+        openRrEl.textContent = `1 : ${rr}`;
+        openRrEl.className = `lj-kpi-val ${totalTpPts >= totalSlPts ? "win" : "loss"}`;
+        openRrSubEl.textContent = totalTpPts >= totalSlPts ? "Favorable upside skew" : "Downside risk exceeds TP";
+      } else {
+        openRrEl.textContent = "—";
+        openRrSubEl.textContent = countWithSl === 0 ? "Missing SL baseline" : "Missing TP targets";
+      }
+
+      const netDelta = longVol - shortVol;
+      if (Math.abs(netDelta) < 1e-4) {
+        biasEl.textContent = "Market Neutral";
+        biasEl.className = "lj-kpi-val";
+        biasSubEl.textContent = "Equal Long & Short lots";
+      } else if (netDelta > 0) {
+        const pctLong = totalVol > 0 ? Math.round((longVol / totalVol) * 100) : 100;
+        biasEl.innerHTML = `<span class="buy font-bold">+${fmtVolume(netDelta)}L (${pctLong}% Long)</span>`;
+        biasSubEl.textContent = "Bullish directional bias";
+      } else {
+        const pctShort = totalVol > 0 ? Math.round((shortVol / totalVol) * 100) : 100;
+        biasEl.innerHTML = `<span class="sell font-bold">-${fmtVolume(Math.abs(netDelta))}S (${pctShort}% Short)</span>`;
+        biasSubEl.textContent = "Bearish directional bias";
+      }
+    }
+  }
+}
+
+function renderLiveJournalAllocation() {
+  const body = document.getElementById("lj-allocation-body");
+  if (!body) return;
+
+  if (!ljCurrentPositions.length) {
+    body.innerHTML = `
+      <div class="empty-state" style="padding: 20px 16px;">
+        <div class="empty-state-icon">📊</div>
+        <div class="empty-state-title">No Instrument Exposure</div>
+        <div class="empty-state-sub">Open MT5 orders will be automatically aggregated here by instrument with volume distribution and safety status.</div>
+      </div>`;
+    return;
+  }
+
+  const totalVol = ljCurrentPositions.reduce((acc, p) => acc + (p.volume || 0), 0) || 1;
+  const bySymbol = {};
+
+  ljCurrentPositions.forEach((p) => {
+    const sym = p.symbol || "UNKNOWN";
+    if (!bySymbol[sym]) {
+      bySymbol[sym] = {
+        symbol: sym,
+        count: 0,
+        longVol: 0,
+        shortVol: 0,
+        totalVol: 0,
+        profit: 0,
+        swap: 0,
+        unprotected: 0,
+      };
+    }
+    const item = bySymbol[sym];
+    item.count++;
+    item.totalVol += (p.volume || 0);
+    if (p.type === "BUY") item.longVol += (p.volume || 0);
+    else item.shortVol += (p.volume || 0);
+    item.profit += (p.profit || 0);
+    item.swap += (p.swap || 0);
+    if (!p.sl || p.sl <= 0) item.unprotected++;
+  });
+
+  const symList = Object.values(bySymbol).sort((a, b) => b.totalVol - a.totalVol);
+
+  const rows = symList.map((item) => {
+    const pct = ((item.totalVol / totalVol) * 100).toFixed(1);
+    const netDelta = item.longVol - item.shortVol;
+    let biasBadge = `<span class="pill">Neutral</span>`;
+    if (netDelta > 1e-4) {
+      biasBadge = `<span class="pill buy">+${fmtVolume(netDelta)}L (${item.longVol.toFixed(2)} Long)</span>`;
+    } else if (netDelta < -1e-4) {
+      biasBadge = `<span class="pill sell">-${fmtVolume(Math.abs(netDelta))}S (${item.shortVol.toFixed(2)} Short)</span>`;
+    }
+
+    const protHtml = item.unprotected > 0
+      ? `<span class="badge badge-danger">⚠️ ${item.unprotected} Unprotected</span>`
+      : `<span class="badge badge-success">🛡️ 100% Protected</span>`;
+
+    return `
+      <tr>
+        <td><b>${esc(item.symbol)}</b> <span class="text-dim">(${item.count} order${item.count > 1 ? "s" : ""})</span></td>
+        <td class="mono font-bold">${fmtVolume(item.totalVol)}</td>
+        <td>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="exposure-progress-bar" style="max-width: 120px;">
+              <div class="exposure-fill ${netDelta >= 0 ? "buy" : "sell"}" style="width: ${pct}%;"></div>
+            </div>
+            <span class="text-dim font-xs mono">${pct}%</span>
+          </div>
+        </td>
+        <td>${biasBadge}</td>
+        <td class="mono ${signClass(item.profit)} font-bold">${item.profit >= 0 ? "+" : ""}$${fmtNum(item.profit)}</td>
+        <td>${protHtml}</td>
+      </tr>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Instrument</th>
+            <th>Total Lots</th>
+            <th>Volume Weight</th>
+            <th>Directional Bias</th>
+            <th>Floating P/L</th>
+            <th>Protection</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 function renderLiveJournalPositions() {
@@ -3477,6 +3756,19 @@ function renderLiveJournalPositions() {
       tpHtml = `<span class="badge badge-info">🎯 ${fmtNum(tp, 5)}</span>`;
     }
 
+    let rrHtml = `<span class="text-dim">—</span>`;
+    if (sl > 0 && tp > 0) {
+      const slDist = Math.abs(openPx - sl);
+      const tpDist = Math.abs(tp - openPx);
+      const rr = slDist > 0 ? (tpDist / slDist).toFixed(2) : "—";
+      rrHtml = `<span class="mono font-bold">1 : ${rr}</span> <span class="text-dim font-xs">(${slDist.toFixed(sl > 100 ? 1 : 4)} pts)</span>`;
+    } else if (sl > 0) {
+      const slDist = Math.abs(openPx - sl);
+      rrHtml = `<span class="text-dim font-xs mono">SL: ${slDist.toFixed(sl > 100 ? 1 : 4)} pts</span>`;
+    } else {
+      rrHtml = `<span class="badge badge-danger">⚠️ Uncapped</span>`;
+    }
+
     const timeFormatted = p.time ? fmtTime(p.time) : "—";
 
     return `
@@ -3487,6 +3779,7 @@ function renderLiveJournalPositions() {
         <td class="mono">${fmtNum(openPx, 5)}</td>
         <td>${slHtml}</td>
         <td>${tpHtml}</td>
+        <td>${rrHtml}</td>
         <td class="mono ${signClass(p.profit)} font-bold">${fmtNum(p.profit)}</td>
         <td class="mono text-dim">${fmtNum(p.swap || 0)}</td>
         <td class="text-dim" style="font-size: 11px;">${timeFormatted}</td>
@@ -3504,6 +3797,7 @@ function renderLiveJournalPositions() {
             <th>Open Price</th>
             <th>Stop-Loss</th>
             <th>Take-Profit</th>
+            <th>Risk / R:R</th>
             <th>Floating P/L</th>
             <th>Swap</th>
             <th>Time</th>
@@ -3513,6 +3807,43 @@ function renderLiveJournalPositions() {
       </table>
     </div>`;
 }
+
+async function copyLiveJournalSummary() {
+  const positions = ljCurrentPositions;
+  const now = new Date().toISOString().replace("T", " ").substring(0, 19);
+  const netProfit = positions.reduce((acc, p) => acc + (p.profit || 0), 0);
+  const totalVol = positions.reduce((acc, p) => acc + (p.volume || 0), 0);
+  const unprotected = positions.filter((p) => !p.sl || p.sl <= 0);
+
+  let md = `### TradeAudit Live Portfolio Snapshot\n`;
+  md += `**Timestamp**: ${now} UTC\n`;
+  md += `**Open Positions**: ${positions.length}\n`;
+  md += `**Floating P/L**: ${netProfit >= 0 ? "+" : ""}$${fmtNum(netProfit)}\n`;
+  md += `**Total Volume**: ${fmtVolume(totalVol)} Lots\n`;
+  md += `**Protection**: ${unprotected.length === 0 ? "🛡️ 100% Protected" : `⚠️ ${unprotected.length} Unprotected`}\n\n`;
+
+  if (positions.length > 0) {
+    md += `| Ticket | Instrument | Type | Volume | Open | SL | TP | Floating P/L |\n`;
+    md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+    positions.forEach((p) => {
+      md += `| #${p.ticket || p.position_id} | ${p.symbol} | ${p.type} | ${fmtVolume(p.volume)} | ${fmtNum(p.price_open, 5)} | ${p.sl > 0 ? fmtNum(p.sl, 5) : "NO SL"} | ${p.tp > 0 ? fmtNum(p.tp, 5) : "—"} | ${fmtNum(p.profit)} |\n`;
+    });
+  } else {
+    md += `*Account is flat. No active positions.*\n`;
+  }
+
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(md);
+      showTransientBanner("📋 Live portfolio snapshot copied to clipboard!", true);
+    } else {
+      showTransientBanner("Clipboard access unavailable in this browser environment.", false);
+    }
+  } catch (e) {
+    showTransientBanner("Could not copy portfolio snapshot: " + e.message, false);
+  }
+}
+
 
 function renderLiveJournalEvents() {
   const body = document.getElementById("lj-events-body");

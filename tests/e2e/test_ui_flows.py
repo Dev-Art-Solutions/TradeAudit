@@ -461,6 +461,15 @@ def test_live_journal_view_rendering_and_polling_controls(page, live_server, see
     assert page.is_visible("#btn-poll")
     assert page.is_visible("#lj-interval-select")
     assert page.is_visible("#lj-status")
+    assert page.is_visible("#btn-copy-live-summary")
+
+    # Live Risk Hub & Allocation Radar
+    assert page.is_visible("#lj-risk-hub")
+    assert page.is_visible("#lj-kpi-downside-risk")
+    assert page.is_visible("#lj-kpi-upside-reward")
+    assert page.is_visible("#lj-kpi-open-rr")
+    assert page.is_visible("#lj-kpi-bias")
+    assert page.is_visible("#lj-allocation-card")
 
     # Positions and events sections
     assert page.is_visible("#lj-positions-card")
@@ -631,3 +640,33 @@ def test_trades_bulk_selection_and_actions(page, live_server, seeded_trade):
     page.click("#btn-bulk-clear-selection")
     page.wait_for_timeout(300)
     assert not page.locator("#bulk-actions-toolbar").is_visible()
+
+
+def test_trades_quick_filter_pills(page, live_server, seeded_trade):
+    page.goto(live_server["base_url"] + "/#trades")
+    page.wait_for_selector("#trades-quick-filters", timeout=15000)
+
+    # 1. Verify quick filter container and pills
+    assert page.is_visible("#trades-quick-filters")
+    assert page.is_visible('[data-preset="ALL"]')
+    assert page.is_visible('[data-preset="WIN"]')
+    assert page.is_visible('[data-preset="LOSS"]')
+    assert page.is_visible('[data-preset="VIOLATION"]')
+    assert page.is_visible('[data-preset="DISCIPLINED"]')
+    assert page.is_visible('[data-preset="EMOTIONAL"]')
+
+    # 2. Click Winners pill and verify active state
+    page.click('[data-preset="WIN"]')
+    page.wait_for_timeout(300)
+    assert "active" in page.get_attribute('[data-preset="WIN"]', "class")
+
+    # 3. Click Losers pill and verify active state
+    page.click('[data-preset="LOSS"]')
+    page.wait_for_timeout(300)
+    assert "active" in page.get_attribute('[data-preset="LOSS"]', "class")
+    assert "active" not in page.get_attribute('[data-preset="WIN"]', "class")
+
+    # 4. Click All Trades pill to reset
+    page.click('[data-preset="ALL"]')
+    page.wait_for_timeout(300)
+    assert "active" in page.get_attribute('[data-preset="ALL"]', "class")

@@ -4,6 +4,13 @@
 
 ### Added
 
+- Real-Time Risk Exposure & Margin Safety Hub (`#lj-risk-hub`) in Live Journal (`#live-journal`) computing aggregate Downside Risk at hard Stop-Loss (in price points), aggregate Upside Target Potential at Take-Profit, portfolio-wide Planned Reward:Risk ratio, and Net Market Directional Bias (Long vs Short volume weighting).
+- Open Exposure & Instrument Concentration Radar (`#lj-allocation-card`) in Live Journal aggregating active positions by instrument with volume distribution percentage progress bars, net lots direction badges, floating P/L, and Stop-Loss safety protection indicators.
+- Individual position Risk and Planned R:R metrics column in the Live Journal MT5 positions ledger showing point distance to SL/TP and setup R:R skew with uncapped risk alerts on missing Stop-Losses.
+- One-click Live Portfolio Snapshot clipboard export button (`#btn-copy-live-summary`) generating structured markdown summaries of open orders, floating P/L, exposure volume, and protection status with interactive toast feedback.
+- One-click Quick Preset Filter Pills (`#trades-quick-filters`) on the Trades ledger (`#trades`) enabling instant 1-click triage for All Trades, Winners 🟢, Losers 🔴, Rule Violations ⚠️, Compliant 🎯, and Emotional/Tilt Trades ⚡ with automatic dropdown synchronization.
+- Backend live positions summary metadata in `GET /api/live-journal/positions` returning real-time count, total profit, swap, volume, and unprotected order metrics.
+
 - Multi-dimensional Strategy Breakdown dimension (`by_strategy`) in `BreakdownAnalyzer` and Breakdowns view (`#breakdowns`) computing complete performance metrics per strategy and unassigned positions, accompanied by a Top Strategy Edge hero insight card and category filter toggle.
 - Trade Setup Pattern tagging and 5-Star Execution Quality Rating review (`#drawer-setup-input`, `#drawer-rating-select`) in the Trade Inspection Drawer with seamless saving to trade journal records and integration into external AI audit prompt generation.
 - Institutional Risk-Adjusted Performance Ratios suite in Quant & Risk (`#quant`) computing R-multiple Sharpe Ratio, downside-volatility Sortino Ratio, Calmar Ratio (Net R / Max Drawdown R), and mathematical Kelly Criterion / Half-Kelly optimal capital allocation.

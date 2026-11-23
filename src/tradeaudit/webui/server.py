@@ -1028,14 +1028,35 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         events_json = [to_jsonable(e) for e in events]
         account_id = ctx.current_login()
         if not account_id:
-            return {"status": "Configure MT5 settings first", "positions": [], "events": events_json}
+            return {
+                "status": "Configure MT5 settings first",
+                "positions": [],
+                "events": events_json,
+                "summary": {"count": 0, "total_profit": 0.0, "total_swap": 0.0, "total_volume": 0.0, "unprotected_count": 0},
+            }
         if not ctx.mt5_service.is_connected():
-            return {"status": "MT5 Disconnected", "positions": [], "events": events_json}
+            return {
+                "status": "MT5 Disconnected",
+                "positions": [],
+                "events": events_json,
+                "summary": {"count": 0, "total_profit": 0.0, "total_swap": 0.0, "total_volume": 0.0, "unprotected_count": 0},
+            }
         positions = ctx.live_watcher_service.poll_positions(account_id)
+        total_profit = sum(p.profit for p in positions)
+        total_swap = sum(p.swap for p in positions)
+        total_volume = sum(p.volume for p in positions)
+        unprotected_count = sum(1 for p in positions if not p.sl or p.sl <= 0)
         return {
             "status": f"Active ({len(positions)} open position(s))",
             "positions": [to_jsonable(p) for p in positions],
             "events": events_json,
+            "summary": {
+                "count": len(positions),
+                "total_profit": round(total_profit, 2),
+                "total_swap": round(total_swap, 2),
+                "total_volume": round(total_volume, 3),
+                "unprotected_count": unprotected_count,
+            },
         }
 
     # ------------------------------------------------------------ trade chart
