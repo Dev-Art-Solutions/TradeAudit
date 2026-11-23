@@ -2947,6 +2947,21 @@ function renderBreakdownInsights(b) {
     }
   }
 
+  if (b.by_strategy) {
+    const strats = Object.entries(b.by_strategy).filter(([k, m]) => k !== "Unassigned" && m.total_trades > 0);
+    if (strats.length) {
+      strats.sort((a, b) => (b[1].net_profit || 0) - (a[1].net_profit || 0));
+      const best = strats[0];
+      insights.push(`
+        <div class="bd-insight-card">
+          <div class="bd-insight-label">Top Strategy Edge</div>
+          <div class="bd-insight-val">${esc(best[0])}</div>
+          <div class="bd-insight-sub text-win">${fmtNum(best[1].net_profit)} (${fmtNum(best[1].expectancy_r, 2)}R · ${best[1].total_trades} trades)</div>
+        </div>
+      `);
+    }
+  }
+
   if (b.by_session) {
     const sessions = Object.entries(b.by_session).filter(([, m]) => m.total_trades > 0);
     if (sessions.length) {
@@ -3158,6 +3173,7 @@ async function viewBreakdowns() {
       <div class="dimension-filter-bar">
         <button class="btn btn-sm bd-filter-btn active" data-bd-cat="all">All Dimensions</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="instrument">Symbol & Direction</button>
+        <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="strategy">Strategies</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="time">Time & Sessions</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="sequence">Sequence & Streaks</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="emotion">Psychology & Emotion</button>
@@ -3168,6 +3184,10 @@ async function viewBreakdowns() {
       <div class="bd-group cat-instrument">
         ${breakdownTable("By Symbol", b.by_symbol)}
         ${breakdownTable("By Direction (BUY vs SELL)", b.by_direction)}
+      </div>
+
+      <div class="bd-group cat-strategy">
+        ${breakdownTable("By Assigned Strategy", b.by_strategy)}
       </div>
 
       <div class="bd-group cat-time">
@@ -6064,8 +6084,11 @@ async function openTradeDrawer(tradeId) {
   panel.innerHTML = `<div class="drawer-loading"><div class="drawer-spinner"></div><div>Loading trade #${tradeId} audit details…</div></div>`;
 
   try {
-    const trade = await apiGet(`/trades/${tradeId}`);
-    renderTradeDrawerContent(trade);
+    const [trade, note] = await Promise.all([
+      apiGet(`/trades/${tradeId}`),
+      apiGet(`/trades/${tradeId}/journal`).catch(() => null),
+    ]);
+    renderTradeDrawerContent(trade, note);
   } catch (err) {
     panel.innerHTML = `
       <div class="drawer-header">
@@ -6099,7 +6122,7 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-function renderTradeDrawerContent(t) {
+function renderTradeDrawerContent(t, note = null) {
   const panel = document.getElementById("trade-drawer-panel");
   if (!panel) return;
 
@@ -6300,6 +6323,26 @@ function renderTradeDrawerContent(t) {
           </div>` : ''}
       </div>
 
+      <!-- Trade Setup & Execution Rating -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">Trade Setup & Execution Rating</div>
+        <div class="drawer-two-col">
+          <div class="drawer-field">
+            <label for="drawer-setup-input" class="drawer-field-lbl">Setup / Pattern</label>
+            <input type="text" id="drawer-setup-input" class="table-input" style="width:100%" placeholder="e.g. Break & Retest, Liquidity Sweep" value="${esc((note && note.setup_name) || '')}" />
+          </div>
+          <div class="drawer-field">
+            <label for="drawer-rating-select" class="drawer-field-lbl">Execution Grade</label>
+            <select id="drawer-rating-select" class="form-select">
+              ${["A+", "A", "B", "C", "D", "F"].map((g) => `<option value="${g}" ${(note && note.rating === g) || (!note && g === 'A') ? 'selected' : ''}>Grade ${g}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+          <button class="btn btn-sm btn-subtle" id="drawer-save-setup-btn">Save Setup Review</button>
+        </div>
+      </div>
+
       <!-- Psychology & Behavior -->
       <div class="drawer-section">
         <div class="drawer-section-title">Trader Psychology & Discipline Audit</div>
@@ -6341,6 +6384,8 @@ function renderTradeDrawerContent(t) {
       const stratName = stratObj ? stratObj.name : "Unassigned";
       const flagsText = (t.auto_behavior_flags || []).map((f) => f.flag_type).join(", ") || "None";
       const slModText = (t.sl_history || []).map((s) => `  - ${fmtDate(s.timestamp)}: SL ${s.old_sl !== null ? fmtNum(s.old_sl, 5) : 'None'} ➔ ${fmtNum(s.new_sl, 5)}${s.change_reason ? ' (' + s.change_reason + ')' : ''}`).join("\n") || "  None";
+      const setupName = (document.getElementById("drawer-setup-input") || {}).value || (note && note.setup_name) || "Unspecified";
+      const ratingStr = (document.getElementById("drawer-rating-select") || {}).value || (note && note.rating) || "A";
 
       const promptText = `Please analyze and audit this MT5 trade execution:
 Symbol: ${t.symbol}
@@ -6353,6 +6398,8 @@ Closed: ${t.close_time ? fmtDate(t.close_time) : "N/A"} @ ${t.close_price !== nu
 Duration: ${durationStr}
 Initial SL: ${t.initial_sl ? fmtNum(t.initial_sl, 5) : "None"}, Initial TP: ${t.initial_tp ? fmtNum(t.initial_tp, 5) : "None"}
 Assigned Strategy: ${stratName}
+Setup / Pattern: ${setupName}
+Execution Rating: Grade ${ratingStr}
 Rule Compliance: ${t.compliance_status || "UNCHECKED"}${t.deviation_reason ? " (Deviation: " + t.deviation_reason + ")" : ""}
 Emotional State: ${t.emotion_tag || "None"}
 Behavioral Flags: ${flagsText}
@@ -6380,6 +6427,28 @@ Please provide an objective audit of:
     state.selectedTradeId = t.id;
     navigate("trade-chart");
   });
+
+  const saveSetupBtn = document.getElementById("drawer-save-setup-btn");
+  if (saveSetupBtn) {
+    saveSetupBtn.addEventListener("click", async () => {
+      const setupName = (document.getElementById("drawer-setup-input") || {}).value || "";
+      const rating = (document.getElementById("drawer-rating-select") || {}).value || "A";
+      try {
+        await apiPost(`/trades/${t.id}/journal`, {
+          setup_name: setupName,
+          rating: rating,
+          pre_trade_thesis: note ? (note.pre_trade_thesis || "") : "",
+          post_trade_review: note ? (note.post_trade_review || "") : "",
+          lessons_learned: note ? (note.lessons_learned || "") : "",
+          mistakes_identified: note ? (note.mistakes_identified || []) : [],
+          checklist_data: note ? (note.checklist_data || {}) : {},
+        });
+        showTransientBanner("Trade setup review saved successfully.", true);
+      } catch (err) {
+        showTransientBanner("Failed to save setup review: " + err.message, false);
+      }
+    });
+  }
 
   const stratSelect = document.getElementById("drawer-strat-select");
   stratSelect.addEventListener("change", async () => {

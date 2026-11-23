@@ -4,6 +4,8 @@
 
 ### Added
 
+- Multi-dimensional Strategy Breakdown dimension (`by_strategy`) in `BreakdownAnalyzer` and Breakdowns view (`#breakdowns`) computing complete performance metrics per strategy and unassigned positions, accompanied by a Top Strategy Edge hero insight card and category filter toggle.
+- Trade Setup Pattern tagging and 5-Star Execution Quality Rating review (`#drawer-setup-input`, `#drawer-rating-select`) in the Trade Inspection Drawer with seamless saving to trade journal records and integration into external AI audit prompt generation.
 - Institutional Risk-Adjusted Performance Ratios suite in Quant & Risk (`#quant`) computing R-multiple Sharpe Ratio, downside-volatility Sortino Ratio, Calmar Ratio (Net R / Max Drawdown R), and mathematical Kelly Criterion / Half-Kelly optimal capital allocation.
 - Interactive Rolling Window Edge & Expectancy Progression Canvas (`#rolling-edge-canvas`) plotting sliding window expectancy evolution across trade history with zero baseline, positive/negative shaded bands, crosshair tooltips, and 20/50/100 trade window switcher.
 - Global Trading Sessions Performance Matrix and live market clock hub in the Breakdowns view (`#breakdowns`) covering Asia, London, New York, London/NY Overlap, and Off-Hours sessions with real-time active indicators, win rates, net P/L, expectancy R, and 1-click drill-down filtering to the trades ledger.

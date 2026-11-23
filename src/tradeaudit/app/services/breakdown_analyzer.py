@@ -11,7 +11,7 @@ Provides detailed performance breakdowns across multiple trade attributes:
 - Emotional Tags (CALM, FOMO, REVENGE, etc.)
 """
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 from datetime import datetime
 from dataclasses import dataclass, field
 
@@ -31,6 +31,7 @@ class AdvancedBreakdownResults:
     by_context: Dict[str, PerformanceMetrics] = field(default_factory=dict)
     by_streak: Dict[str, PerformanceMetrics] = field(default_factory=dict)
     by_emotion: Dict[str, PerformanceMetrics] = field(default_factory=dict)
+    by_strategy: Dict[str, PerformanceMetrics] = field(default_factory=dict)
 
 
 class BreakdownAnalyzer:
@@ -236,7 +237,28 @@ class BreakdownAnalyzer:
         return {tag: PerformanceAnalyzer.analyze(emotion_map[tag]) for tag in sorted(emotion_map.keys())}
 
     @classmethod
-    def analyze_all(cls, trades: List[Trade]) -> AdvancedBreakdownResults:
+    def analyze_by_strategy(
+        cls, trades: List[Trade], strategies: Optional[Dict[int, str]] = None
+    ) -> Dict[str, PerformanceMetrics]:
+        """Group trades by assigned strategy name."""
+        strategy_names = strategies or {}
+        strat_map: Dict[str, List[Trade]] = {}
+
+        for t in trades:
+            if t.strategy_id is not None:
+                name = strategy_names.get(t.strategy_id, f"Strategy #{t.strategy_id}")
+            else:
+                name = "Unassigned"
+            if name not in strat_map:
+                strat_map[name] = []
+            strat_map[name].append(t)
+
+        return {k: PerformanceAnalyzer.analyze(v) for k, v in sorted(strat_map.items())}
+
+    @classmethod
+    def analyze_all(
+        cls, trades: List[Trade], strategies: Optional[Dict[int, str]] = None
+    ) -> AdvancedBreakdownResults:
         """Run all breakdown analytics on a given list of trades."""
         return AdvancedBreakdownResults(
             by_symbol=cls.analyze_by_symbol(trades),
@@ -246,5 +268,6 @@ class BreakdownAnalyzer:
             by_hour=cls.analyze_by_hour(trades),
             by_context=cls.analyze_by_context(trades),
             by_streak=cls.analyze_by_streak(trades),
-            by_emotion=cls.analyze_by_emotion(trades)
+            by_emotion=cls.analyze_by_emotion(trades),
+            by_strategy=cls.analyze_by_strategy(trades, strategies=strategies)
         )

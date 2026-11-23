@@ -716,7 +716,8 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
     @app.get("/api/breakdown")
     def breakdown():
         _, closed = closed_trades()
-        return to_jsonable(BreakdownAnalyzer.analyze_all(closed))
+        strats = {s.id: s.name for s in ctx.strategy_service.get_all_strategies() if s.id is not None}
+        return to_jsonable(BreakdownAnalyzer.analyze_all(closed, strategies=strats))
 
     @app.get("/api/quant")
     def quant(

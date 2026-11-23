@@ -399,6 +399,11 @@ def test_breakdowns_view_dimensions_and_hourly_chart(page, live_server, seeded_t
     assert page.is_visible(".session-clock-pill")
     assert page.locator(".session-card").count() >= 5
 
+    # Filter to Strategy category
+    page.click('[data-bd-cat="strategy"]')
+    page.wait_for_selector(".cat-strategy", timeout=5000)
+    assert page.is_visible("text=By Assigned Strategy")
+
     # Filter to Sequence & Streaks category
     page.click('[data-bd-cat="sequence"]')
     page.wait_for_selector(".cat-sequence", timeout=5000)
@@ -583,6 +588,15 @@ def test_trades_inspection_drawer(page, live_server, seeded_trade):
     page.fill("#drawer-notes-input", "Entered after liquidity sweep on support.")
     page.click("#drawer-save-notes-btn")
     page.wait_for_selector("text=Trade notes saved successfully", timeout=5000)
+
+    # Setup pattern and execution rating
+    assert page.is_visible("#drawer-setup-input")
+    assert page.is_visible("#drawer-rating-select")
+    assert page.is_visible("#drawer-save-setup-btn")
+    page.fill("#drawer-setup-input", "Liquidity Sweep")
+    page.select_option("#drawer-rating-select", "A+")
+    page.click("#drawer-save-setup-btn")
+    page.wait_for_selector("text=Trade setup review saved successfully", timeout=5000)
 
     # Close drawer using close button
     page.click("#drawer-close-btn")

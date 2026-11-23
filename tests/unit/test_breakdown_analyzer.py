@@ -161,3 +161,17 @@ def test_analyze_all(sample_breakdown_trades):
     assert len(all_res.by_session) == 5
     assert len(all_res.by_weekday) == 7
     assert len(all_res.by_hour) == 24
+
+
+def test_analyze_by_strategy(sample_breakdown_trades):
+    sample_breakdown_trades[0].strategy_id = 1
+    sample_breakdown_trades[1].strategy_id = 2
+    strats = {1: "Trend Following", 2: "London Breakout"}
+
+    results = BreakdownAnalyzer.analyze_by_strategy(sample_breakdown_trades, strategies=strats)
+    assert "Trend Following" in results
+    assert "London Breakout" in results
+    assert "Unassigned" in results
+    assert results["Trend Following"].total_trades == 1
+    assert results["London Breakout"].total_trades == 1
+    assert results["Unassigned"].total_trades == 2
