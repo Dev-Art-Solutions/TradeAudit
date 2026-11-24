@@ -2653,3 +2653,80 @@ canvas.chart-canvas { width: 100%; height: 220px; display: block; }
   color: var(--primary, #3b82f6);
   font-weight: 600;
 }
+
+
+/* Risk of Ruin Sensitivity Matrix */
+.ror-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ror-matrix-table th {
+  background: var(--surface-sub);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
+.ror-matrix-table th:first-child {
+  text-align: left;
+}
+
+.ror-matrix-table td {
+  border: 1px solid var(--border);
+  text-align: center;
+  padding: 8px 10px;
+  transition: background 0.15s ease;
+}
+
+.ror-matrix-table td:first-child {
+  text-align: left;
+  font-weight: 600;
+  background: var(--surface-sub);
+}
+
+.ror-cell-safe {
+  background: rgba(16, 185, 129, 0.08);
+  color: var(--win, #10b981);
+}
+
+.ror-cell-low {
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--primary, #3b82f6);
+}
+
+.ror-cell-moderate {
+  background: rgba(245, 158, 11, 0.08);
+  color: #f59e0b;
+}
+
+.ror-cell-elevated {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--loss, #ef4444);
+}
+
+.ror-cell-critical {
+  background: rgba(239, 68, 68, 0.22);
+  color: #f87171;
+  font-weight: 700;
+}
+
+.ror-cell-dim {
+  color: var(--text-dim);
+}
+
+/* Trade Drawer Exit & Copy Card Styles */
+.drawer-exit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sub);
+  border: 1px solid var(--border-soft);
+}

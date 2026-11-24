@@ -145,6 +145,27 @@ class RiskOfRuinAnalysis:
 
 
 @dataclass
+class RiskOfRuinMatrixCell:
+    """Individual cell in a risk-of-ruin sensitivity grid."""
+    risk_per_trade_pct: float = 1.0
+    drawdown_pct: float = 20.0
+    drawdown_tolerance_r: float = 20.0
+    consecutive_losses_to_ruin: int = 20
+    ruin_probability: float = 0.0
+    risk_level: str = "LOW"  # SAFE, LOW, MODERATE, ELEVATED, CRITICAL
+
+
+@dataclass
+class RiskOfRuinMatrix:
+    """Multi-scenario Risk of Ruin sensitivity matrix across varying position risk and drawdown tolerances."""
+    risk_per_trade_options: List[float] = field(default_factory=lambda: [0.5, 1.0, 1.5, 2.0, 3.0])
+    drawdown_options: List[float] = field(default_factory=lambda: [10.0, 20.0, 30.0, 50.0])
+    cells: List[RiskOfRuinMatrixCell] = field(default_factory=list)
+    optimal_risk_pct: float = 1.0
+    capital_preservation_score: float = 100.0
+
+
+@dataclass
 class RollingMetricPoint:
     """Data point in rolling trade metrics progression."""
     trade_index: int = 0
@@ -197,5 +218,6 @@ class QuantResearchResult:
     calmar_ratio_r: Optional[float] = None
     kelly_criterion_pct: Optional[float] = None
     half_kelly_pct: Optional[float] = None
+    ruin_matrix: Optional[RiskOfRuinMatrix] = None
 
 

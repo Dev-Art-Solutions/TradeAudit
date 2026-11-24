@@ -4,6 +4,9 @@
 
 ### Added
 
+- Risk of Ruin Sensitivity Matrix & Capital Preservation Table (`#quant-ror-matrix-card`) in Quant & Risk (`#quant`) simulating Brownian continuous diffusion ruin probabilities across varying position risk allocations (0.5% to 3.0%) and drawdown limits (10% to 50%), featuring consecutive loss buffers, Capital Preservation Resilience Score (`#quant-resilience-badge`), and optimal risk allocation recommendations.
+- Trade Lifecycle Exit Quality classification and 1-Click Markdown Trade Card export (`#drawer-btn-copy-card`) in the Trade Inspection Drawer, providing full target capture, early exit, standard stop, and wide deviation feedback with instant clipboard copy for journaling.
+
 - Real-Time Risk Exposure & Margin Safety Hub (`#lj-risk-hub`) in Live Journal (`#live-journal`) computing aggregate Downside Risk at hard Stop-Loss (in price points), aggregate Upside Target Potential at Take-Profit, portfolio-wide Planned Reward:Risk ratio, and Net Market Directional Bias (Long vs Short volume weighting).
 - Open Exposure & Instrument Concentration Radar (`#lj-allocation-card`) in Live Journal aggregating active positions by instrument with volume distribution percentage progress bars, net lots direction badges, floating P/L, and Stop-Loss safety protection indicators.
 - Individual position Risk and Planned R:R metrics column in the Live Journal MT5 positions ledger showing point distance to SL/TP and setup R:R skew with uncapped risk alerts on missing Stop-Losses.

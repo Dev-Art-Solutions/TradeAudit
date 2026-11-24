@@ -384,6 +384,12 @@ def test_quant_view_monte_carlo_cone_and_confidence_intervals(page, live_server,
     page.wait_for_timeout(200)
     assert "50 Trades" in page.text_content("#rolling-active-window-lbl")
 
+    # Verify Risk of Ruin Sensitivity Matrix & Capital Preservation Table
+    assert page.is_visible("#quant-ror-matrix-card")
+    assert page.is_visible("#quant-resilience-badge")
+    assert page.is_visible("#quant-optimal-risk-badge")
+    assert page.is_visible("#quant-ror-matrix-table")
+
 
 def test_breakdowns_view_dimensions_and_hourly_chart(page, live_server, seeded_trade):
     page.goto(live_server["base_url"] + "/#breakdowns")
@@ -570,6 +576,7 @@ def test_dashboard_calendar_and_underwater_chart(page, live_server, seeded_trade
 
 
 def test_trades_inspection_drawer(page, live_server, seeded_trade):
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])
     page.goto(live_server["base_url"] + "/#trades")
     page.wait_for_selector(".clickable-row", timeout=15000)
 
@@ -581,6 +588,7 @@ def test_trades_inspection_drawer(page, live_server, seeded_trade):
     assert page.is_visible("#trade-drawer-panel")
     assert page.is_visible("#drawer-close-btn")
     assert page.is_visible("#drawer-btn-chart")
+    assert page.is_visible("#drawer-btn-copy-card")
     assert page.is_visible("#drawer-btn-copy-ai-prompt")
 
     # Seeded trade is EURUSD BUY
@@ -588,10 +596,15 @@ def test_trades_inspection_drawer(page, live_server, seeded_trade):
     assert "BUY" in page.text_content("#trade-drawer-panel")
     assert "Holding Duration" in page.text_content("#trade-drawer-panel")
     assert "R:R Capture Efficiency" in page.text_content("#trade-drawer-panel")
+    assert "Exit Quality" in page.text_content("#trade-drawer-panel")
     assert page.is_visible("#drawer-strat-select")
     assert page.is_visible("#drawer-emotion-select")
     assert page.is_visible("#drawer-notes-input")
     assert page.is_visible("#drawer-save-notes-btn")
+
+    # Copy trade summary card
+    page.click("#drawer-btn-copy-card")
+    page.wait_for_selector("text=Trade summary card copied to clipboard", timeout=5000)
 
     # Add a note and save
     page.fill("#drawer-notes-input", "Entered after liquidity sweep on support.")

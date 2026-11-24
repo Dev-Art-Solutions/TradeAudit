@@ -18,6 +18,8 @@ from tradeaudit.domain.analytics import (
     MonteCarloResult,
     RuinRiskLevel,
     RiskOfRuinAnalysis,
+    RiskOfRuinMatrix,
+    RiskOfRuinMatrixCell,
     RollingMetricPoint,
     RollingAnalyticsResult,
     BootstrapConfidenceIntervals,
@@ -306,6 +308,109 @@ class QuantResearchAnalyzer:
             ]
         )
 
+    def calculate_risk_of_ruin_matrix(
+        self,
+        trades: Sequence[Trade],
+        risk_per_trade_options: Optional[Sequence[float]] = None,
+        drawdown_options: Optional[Sequence[float]] = None,
+    ) -> RiskOfRuinMatrix:
+        """
+        Compute multi-scenario Risk of Ruin sensitivity matrix across varying position risk
+        allocations and drawdown tolerances.
+        """
+        risk_opts = list(risk_per_trade_options or [0.5, 1.0, 1.5, 2.0, 3.0])
+        dd_opts = list(drawdown_options or [10.0, 20.0, 30.0, 50.0])
+
+        r_list = self._extract_closed_r_multiples(trades)
+        if len(r_list) < 5:
+            cells = []
+            for r_pct in risk_opts:
+                for dd_pct in dd_opts:
+                    u_tol = round(dd_pct / r_pct, 2)
+                    consec = int(dd_pct // r_pct)
+                    cells.append(RiskOfRuinMatrixCell(
+                        risk_per_trade_pct=r_pct,
+                        drawdown_pct=dd_pct,
+                        drawdown_tolerance_r=u_tol,
+                        consecutive_losses_to_ruin=consec,
+                        ruin_probability=0.0,
+                        risk_level="INSUFFICIENT_DATA"
+                    ))
+            return RiskOfRuinMatrix(
+                risk_per_trade_options=risk_opts,
+                drawdown_options=dd_opts,
+                cells=cells,
+                optimal_risk_pct=1.0,
+                capital_preservation_score=100.0
+            )
+
+        mean_r = statistics.mean(r_list)
+        std_r = statistics.stdev(r_list) if len(r_list) > 1 else 0.0
+
+        cells: List[RiskOfRuinMatrixCell] = []
+        ruin_probs_standard = []
+
+        for r_pct in risk_opts:
+            for dd_pct in dd_opts:
+                u_tol = round(dd_pct / r_pct, 2)
+                consec = int(dd_pct // r_pct)
+
+                if mean_r <= 0 or std_r <= 1e-6:
+                    prob = 100.0
+                    level = "CRITICAL"
+                else:
+                    exponent = -2.0 * mean_r * u_tol / (std_r ** 2)
+                    exponent = max(-100.0, min(0.0, exponent))
+                    val = math.exp(exponent) * 100.0
+                    prob = round(max(0.0, min(100.0, val)), 1)
+
+                    if prob < 1.0:
+                        level = "SAFE"
+                    elif prob < 5.0:
+                        level = "LOW"
+                    elif prob < 20.0:
+                        level = "MODERATE"
+                    elif prob < 50.0:
+                        level = "ELEVATED"
+                    else:
+                        level = "CRITICAL"
+
+                cells.append(RiskOfRuinMatrixCell(
+                    risk_per_trade_pct=r_pct,
+                    drawdown_pct=dd_pct,
+                    drawdown_tolerance_r=u_tol,
+                    consecutive_losses_to_ruin=consec,
+                    ruin_probability=prob,
+                    risk_level=level
+                ))
+
+                if r_pct in (1.0, 2.0) and dd_pct in (20.0, 30.0):
+                    ruin_probs_standard.append(prob)
+
+        safe_risk_candidates = [
+            c.risk_per_trade_pct for c in cells
+            if c.drawdown_pct == 20.0 and c.ruin_probability <= 1.0
+        ]
+        if safe_risk_candidates:
+            optimal_risk = max(safe_risk_candidates)
+        else:
+            low_candidates = [
+                c.risk_per_trade_pct for c in cells
+                if c.drawdown_pct == 20.0 and c.ruin_probability <= 5.0
+            ]
+            optimal_risk = max(low_candidates) if low_candidates else 0.5
+
+        avg_ruin = statistics.mean(ruin_probs_standard) if ruin_probs_standard else 0.0
+        preservation_score = round(max(0.0, min(100.0, 100.0 - avg_ruin)), 1)
+
+        return RiskOfRuinMatrix(
+            risk_per_trade_options=risk_opts,
+            drawdown_options=dd_opts,
+            cells=cells,
+            optimal_risk_pct=optimal_risk,
+            capital_preservation_score=preservation_score
+        )
+
     def calculate_rolling_metrics(
         self,
         trades: Sequence[Trade],
@@ -579,6 +684,8 @@ class QuantResearchAnalyzer:
             random_seed=random_seed
         )
 
+        ruin_matrix = self.calculate_risk_of_ruin_matrix(trades=trades)
+
         var_95 = None
         cvar_95 = None
         var_99 = None
@@ -669,7 +776,8 @@ class QuantResearchAnalyzer:
             sortino_ratio_r=sortino_r,
             calmar_ratio_r=calmar_r,
             kelly_criterion_pct=kelly_pct,
-            half_kelly_pct=half_kelly_pct
+            half_kelly_pct=half_kelly_pct,
+            ruin_matrix=ruin_matrix
         )
 
     @staticmethod

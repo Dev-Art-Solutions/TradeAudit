@@ -236,3 +236,37 @@ def test_quant_research_risk_adjusted_ratios_and_kelly(analyzer, sample_winning_
     assert losing_master.sharpe_ratio_r < 0.0
     assert losing_master.kelly_criterion_pct == 0.0
     assert losing_master.half_kelly_pct == 0.0
+
+
+def test_quant_research_risk_of_ruin_matrix(analyzer, sample_winning_trades, sample_losing_trades):
+    # 1. Winning trades should have low/safe ruin probabilities across standard risk parameters
+    winning_master = analyzer.analyze_quant_research(
+        sample_winning_trades,
+        num_simulations=50,
+        random_seed=42
+    )
+
+    matrix = winning_master.ruin_matrix
+    assert matrix is not None
+    assert len(matrix.cells) == len(matrix.risk_per_trade_options) * len(matrix.drawdown_options)
+    assert matrix.capital_preservation_score > 80.0
+    assert matrix.optimal_risk_pct in matrix.risk_per_trade_options
+
+    # Check safe cell (0.5% risk at 50% DD)
+    cell_safe = next(c for c in matrix.cells if c.risk_per_trade_pct == 0.5 and c.drawdown_pct == 50.0)
+    assert cell_safe.drawdown_tolerance_r == 100.0
+    assert cell_safe.consecutive_losses_to_ruin == 100
+    assert cell_safe.ruin_probability <= 1.0
+    assert cell_safe.risk_level == "SAFE"
+
+    # 2. Losing trades should have critical ruin probabilities
+    losing_master = analyzer.analyze_quant_research(
+        sample_losing_trades,
+        num_simulations=50,
+        random_seed=42
+    )
+    l_matrix = losing_master.ruin_matrix
+    assert l_matrix is not None
+    cell_loss = next(c for c in l_matrix.cells if c.risk_per_trade_pct == 2.0 and c.drawdown_pct == 20.0)
+    assert cell_loss.ruin_probability == 100.0
+    assert cell_loss.risk_level == "CRITICAL"

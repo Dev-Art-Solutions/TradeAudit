@@ -4599,6 +4599,9 @@ async function renderQuantView() {
       <ul class="kpi-sub" style="margin-top:8px">${(ror.assumptions || []).map((a) => `<li>${esc(a)}</li>`).join("")}</ul>
     </div>
 
+    <!-- Risk of Ruin Sensitivity Matrix & Capital Preservation Table -->
+    ${renderRuinMatrixSection(q.ruin_matrix)}
+
     ${renderRollingAnalyticsSection(q.rolling_analytics)}
   `;
 
@@ -4909,6 +4912,68 @@ function drawRollingEdgeCanvas(canvas, points, hoveredIdx = -1) {
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }
+}
+
+function renderRuinMatrixSection(matrix) {
+  if (!matrix || !matrix.cells || !matrix.cells.length) return "";
+
+  const riskOpts = matrix.risk_per_trade_options || [0.5, 1.0, 1.5, 2.0, 3.0];
+  const ddOpts = matrix.drawdown_options || [10.0, 20.0, 30.0, 50.0];
+
+  const headerCells = ddOpts.map((dd) => `<th>${dd}% Drawdown</th>`).join("");
+
+  const rows = riskOpts.map((rPct) => {
+    const tdCells = ddOpts.map((dd) => {
+      const cell = matrix.cells.find((c) => Math.abs(c.risk_per_trade_pct - rPct) < 1e-4 && Math.abs(c.drawdown_pct - dd) < 1e-4);
+      if (!cell) return `<td class="ror-cell-dim">—</td>`;
+
+      const lvlClass = `ror-cell-${(cell.risk_level || "low").toLowerCase()}`;
+      const probStr = cell.risk_level === "INSUFFICIENT_DATA" ? "—" : `${cell.ruin_probability.toFixed(1)}%`;
+      return `
+        <td class="${lvlClass}">
+          <div style="font-weight:700;font-size:13px">${probStr}</div>
+          <div style="font-size:10.5px;opacity:0.85">${cell.consecutive_losses_to_ruin} losses buffer</div>
+        </td>`;
+    }).join("");
+
+    return `
+      <tr>
+        <td><b>${rPct.toFixed(1)}%</b> <span class="text-dim">Risk/Tr.</span></td>
+        ${tdCells}
+      </tr>`;
+  }).join("");
+
+  return `
+    <div class="card" id="quant-ror-matrix-card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px">
+        <div>
+          <div class="eyebrow" style="margin:0 0 4px 0">Capital Preservation Radar</div>
+          <div class="card-title" style="margin:0">Risk of Ruin Sensitivity Matrix</div>
+          <div class="card-sub">Simulated probability of reaching maximum account drawdown limits at various position risk allocations</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div class="chip" id="quant-resilience-badge" style="font-weight:600">🛡️ Resilience Score: ${matrix.capital_preservation_score.toFixed(0)}/100</div>
+          <div class="badge badge-info" id="quant-optimal-risk-badge">Recommended: ${matrix.optimal_risk_pct}% / trade</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="ror-matrix-table" id="quant-ror-matrix-table">
+          <thead>
+            <tr>
+              <th>Risk Allocation</th>
+              ${headerCells}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+      <div class="kpi-sub" style="margin-top:10px;font-size:11.5px">
+        Note: Table cells display continuous diffusion P(Ruin) and [consecutive losses to breach limit]. Values below 1.0% indicate high mathematical safety.
+      </div>
+    </div>
+  `;
 }
 
 function renderRollingAnalyticsSection(rolling) {
@@ -6482,6 +6547,26 @@ function renderTradeDrawerContent(t, note = null) {
     ? `${((t.realized_r / t.planned_rr) * 100).toFixed(1)}%`
     : "—";
 
+  let exitQualityBadge = `<span class="drawer-exit-badge text-dim">Normal Exit</span>`;
+  if (t.planned_rr && t.realized_r !== null && t.realized_r !== undefined && t.planned_rr > 0) {
+    const ratio = t.realized_r / t.planned_rr;
+    if (ratio >= 0.95) {
+      exitQualityBadge = `<span class="drawer-exit-badge win">🎯 Full Target (${(ratio * 100).toFixed(0)}%)</span>`;
+    } else if (t.realized_r > 0) {
+      exitQualityBadge = `<span class="drawer-exit-badge" style="color:#f59e0b">⚡ Early Exit (${(ratio * 100).toFixed(0)}% Target)</span>`;
+    } else if (t.realized_r >= -1.05 && t.realized_r <= -0.95) {
+      exitQualityBadge = `<span class="drawer-exit-badge win">🛡️ Standard Stop (-1R)</span>`;
+    } else if (t.realized_r < -1.1) {
+      exitQualityBadge = `<span class="drawer-exit-badge loss">⚠️ Wide Loss (${t.realized_r.toFixed(2)}R)</span>`;
+    }
+  } else if (t.realized_r !== null && t.realized_r !== undefined) {
+    if (t.realized_r >= -1.05 && t.realized_r <= -0.95) {
+      exitQualityBadge = `<span class="drawer-exit-badge win">🛡️ Standard Stop (-1R)</span>`;
+    } else if (t.realized_r < -1.1) {
+      exitQualityBadge = `<span class="drawer-exit-badge loss">⚠️ Wide Loss (${t.realized_r.toFixed(2)}R)</span>`;
+    }
+  }
+
   const stratOptions = `<option value="">None (Unassigned)</option>` + state.strategies.map((s) =>
     `<option value="${s.id}" ${t.strategy_id === s.id ? "selected" : ""}>${esc(s.name)}</option>`
   ).join("");
@@ -6555,6 +6640,7 @@ function renderTradeDrawerContent(t, note = null) {
         <div class="drawer-meta-sub">Position #${t.position_id || t.id} · Ticket #${t.id} · ${fmtDate(t.open_time)}</div>
       </div>
       <div class="drawer-header-actions">
+        <button class="btn btn-sm" id="drawer-btn-copy-card" title="Copy concise trade summary card to clipboard">📋 Copy Card</button>
         <button class="btn btn-sm" id="drawer-btn-copy-ai-prompt" title="Copy comprehensive prompt for LLM trade debrief">🤖 AI Audit Prompt</button>
         <button class="btn btn-sm btn-primary" id="drawer-btn-chart" title="Replay candlestick chart for this trade">📈 Replay Chart</button>
         <button class="btn btn-sm" id="drawer-close-btn" title="Close (Esc)" aria-label="Close drawer">✕</button>
@@ -6625,6 +6711,10 @@ function renderTradeDrawerContent(t, note = null) {
           <div class="drawer-field">
             <span class="drawer-field-lbl">R:R Capture Efficiency</span>
             <span class="drawer-field-val mono">${rrCaptureStr}</span>
+          </div>
+          <div class="drawer-field">
+            <span class="drawer-field-lbl">Exit Quality</span>
+            <span class="drawer-field-val">${exitQualityBadge}</span>
           </div>
           <div class="drawer-field">
             <span class="drawer-field-lbl">Status</span>
@@ -6706,6 +6796,33 @@ function renderTradeDrawerContent(t, note = null) {
   `;
 
   // Attach interactive listeners inside drawer
+  const copyCardBtn = document.getElementById("drawer-btn-copy-card");
+  if (copyCardBtn) {
+    copyCardBtn.addEventListener("click", () => {
+      const dir = t.direction || "BUY";
+      const sym = t.symbol || "UNKNOWN";
+      const ticket = t.position_id || t.id;
+      const netPlStr = `${pl >= 0 ? "+" : ""}$${fmtNum(pl)}`;
+      const netRStr = t.realized_r !== null && t.realized_r !== undefined ? `(${t.realized_r >= 0 ? "+" : ""}${fmtNum(t.realized_r, 2)}R)` : "";
+      const setupVal = document.getElementById("drawer-setup-input") ? document.getElementById("drawer-setup-input").value.trim() : (note && note.setup_pattern ? note.setup_pattern : "");
+      const ratingVal = document.getElementById("drawer-rating-select") ? document.getElementById("drawer-rating-select").value : (note && note.rating ? note.rating : "");
+      const setupStr = setupVal ? ` · Setup: ${setupVal}` : "";
+      const ratingStr = ratingVal ? ` · Grade: ${ratingVal}` : "";
+      const compStr = t.compliance_status ? ` · ${t.compliance_status}` : "";
+      const cardText = `[${sym} ${dir}] #${ticket} · ${netPlStr} ${netRStr} · Duration: ${durationStr}${setupStr}${ratingStr}${compStr}`;
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cardText).then(() => {
+          showTransientBanner("📋 Trade summary card copied to clipboard!", true);
+        }).catch(() => {
+          showTransientBanner("Could not copy trade card to clipboard.", false);
+        });
+      } else {
+        showTransientBanner("Clipboard unavailable in this environment.", false);
+      }
+    });
+  }
+
   document.getElementById("drawer-close-btn").addEventListener("click", closeTradeDrawer);
 
   const copyAiPromptBtn = document.getElementById("drawer-btn-copy-ai-prompt");
