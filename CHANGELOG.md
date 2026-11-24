@@ -4,6 +4,8 @@
 
 ### Added
 
+- Multi-tier Holding Duration Breakdown dimension (`by_duration`) in `BreakdownAnalyzer` and Breakdowns view (`#breakdowns`) categorizing trades across Scalp (< 5m), Intraday (5m-1h, 1h-4h), Session (4h-24h), and Swing (> 24h) horizons with dedicated category filtering, win rates, expectancies, and an Optimal Holding Time hero insight card.
+
 - Risk of Ruin Sensitivity Matrix & Capital Preservation Table (`#quant-ror-matrix-card`) in Quant & Risk (`#quant`) simulating Brownian continuous diffusion ruin probabilities across varying position risk allocations (0.5% to 3.0%) and drawdown limits (10% to 50%), featuring consecutive loss buffers, Capital Preservation Resilience Score (`#quant-resilience-badge`), and optimal risk allocation recommendations.
 - Trade Lifecycle Exit Quality classification and 1-Click Markdown Trade Card export (`#drawer-btn-copy-card`) in the Trade Inspection Drawer, providing full target capture, early exit, standard stop, and wide deviation feedback with instant clipboard copy for journaling.
 

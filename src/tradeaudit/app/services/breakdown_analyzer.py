@@ -32,6 +32,7 @@ class AdvancedBreakdownResults:
     by_streak: Dict[str, PerformanceMetrics] = field(default_factory=dict)
     by_emotion: Dict[str, PerformanceMetrics] = field(default_factory=dict)
     by_strategy: Dict[str, PerformanceMetrics] = field(default_factory=dict)
+    by_duration: Dict[str, PerformanceMetrics] = field(default_factory=dict)
 
 
 class BreakdownAnalyzer:
@@ -255,6 +256,44 @@ class BreakdownAnalyzer:
 
         return {k: PerformanceAnalyzer.analyze(v) for k, v in sorted(strat_map.items())}
 
+    DURATION_BUCKETS = [
+        "SCALP_UNDER_5M",      # < 5 minutes
+        "INTRADAY_5M_TO_1H",    # 5m to 60m
+        "INTRADAY_1H_TO_4H",    # 1h to 4h
+        "SESSION_4H_TO_1D",     # 4h to 24h
+        "SWING_OVER_1D"         # > 24h
+    ]
+
+    @classmethod
+    def get_duration_bucket(cls, trade: Trade) -> Optional[str]:
+        """Categorize a closed trade into holding duration brackets."""
+        if not trade.open_time or not trade.close_time or trade.close_time < trade.open_time:
+            return None
+        mins = (trade.close_time - trade.open_time).total_seconds() / 60.0
+        if mins < 5:
+            return "SCALP_UNDER_5M"
+        elif mins < 60:
+            return "INTRADAY_5M_TO_1H"
+        elif mins < 240:
+            return "INTRADAY_1H_TO_4H"
+        elif mins <= 1440:
+            return "SESSION_4H_TO_1D"
+        else:
+            return "SWING_OVER_1D"
+
+    @classmethod
+    def analyze_by_duration(cls, trades: List[Trade]) -> Dict[str, PerformanceMetrics]:
+        """Group closed trades by holding duration brackets and compute metrics."""
+        duration_map: Dict[str, List[Trade]] = {bucket: [] for bucket in cls.DURATION_BUCKETS}
+        closed_trades = [t for t in trades if t.status and t.status.upper() == "CLOSED"]
+
+        for t in closed_trades:
+            bucket = cls.get_duration_bucket(t)
+            if bucket and bucket in duration_map:
+                duration_map[bucket].append(t)
+
+        return {bucket: PerformanceAnalyzer.analyze(duration_map[bucket]) for bucket in cls.DURATION_BUCKETS}
+
     @classmethod
     def analyze_all(
         cls, trades: List[Trade], strategies: Optional[Dict[int, str]] = None
@@ -269,5 +308,6 @@ class BreakdownAnalyzer:
             by_context=cls.analyze_by_context(trades),
             by_streak=cls.analyze_by_streak(trades),
             by_emotion=cls.analyze_by_emotion(trades),
-            by_strategy=cls.analyze_by_strategy(trades, strategies=strategies)
+            by_strategy=cls.analyze_by_strategy(trades, strategies=strategies),
+            by_duration=cls.analyze_by_duration(trades)
         )

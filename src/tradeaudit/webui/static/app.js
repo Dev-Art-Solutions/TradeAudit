@@ -2905,6 +2905,11 @@ const BREAKDOWN_DIM_LABELS = {
   GREED: "🤑 Greed",
   FEAR: "😨 Fear",
   BOREDOM: "🥱 Boredom",
+  SCALP_UNDER_5M: "⚡ Scalp (< 5m)",
+  INTRADAY_5M_TO_1H: "⏱️ Intraday (5m - 1h)",
+  INTRADAY_1H_TO_4H: "🕐 Intraday (1h - 4h)",
+  SESSION_4H_TO_1D: "📅 Session (4h - 24h)",
+  SWING_OVER_1D: "🌊 Swing (> 24h)",
 };
 
 function formatBreakdownKey(key) {
@@ -2994,6 +2999,21 @@ function drawHourlyBarChart(canvas, hourlyData) {
 
 function renderBreakdownInsights(b) {
   const insights = [];
+
+  if (b.by_duration) {
+    const durEntries = Object.entries(b.by_duration).filter(([, m]) => m.total_trades > 0);
+    if (durEntries.length) {
+      durEntries.sort((a, b) => (b[1].net_profit || 0) - (a[1].net_profit || 0));
+      const best = durEntries[0];
+      insights.push(`
+        <div class="bd-insight-card">
+          <div class="bd-insight-label">Optimal Holding Time</div>
+          <div class="bd-insight-val">${formatBreakdownKey(best[0])}</div>
+          <div class="bd-insight-sub text-win">${fmtNum(best[1].net_profit)} (${fmtNum(best[1].expectancy_r, 2)}R · ${fmtPct(best[1].win_rate)} WR)</div>
+        </div>
+      `);
+    }
+  }
 
   if (b.by_symbol) {
     const symbols = Object.entries(b.by_symbol).filter(([, m]) => m.total_trades > 0);
@@ -3237,6 +3257,7 @@ async function viewBreakdowns() {
         <button class="btn btn-sm bd-filter-btn active" data-bd-cat="all">All Dimensions</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="instrument">Symbol & Direction</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="strategy">Strategies</button>
+        <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="duration">Holding Duration</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="time">Time & Sessions</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="sequence">Sequence & Streaks</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="emotion">Psychology & Emotion</button>
@@ -3251,6 +3272,10 @@ async function viewBreakdowns() {
 
       <div class="bd-group cat-strategy">
         ${breakdownTable("By Assigned Strategy", b.by_strategy)}
+      </div>
+
+      <div class="bd-group cat-duration">
+        ${breakdownTable("By Holding Duration (Scalp vs Intraday vs Swing)", b.by_duration, "cat-duration-card")}
       </div>
 
       <div class="bd-group cat-time">

@@ -161,6 +161,26 @@ def test_analyze_all(sample_breakdown_trades):
     assert len(all_res.by_session) == 5
     assert len(all_res.by_weekday) == 7
     assert len(all_res.by_hour) == 24
+    assert len(all_res.by_duration) == 5
+
+
+def test_analyze_by_duration(sample_breakdown_trades):
+    # sample_breakdown_trades:
+    # t1: 2:00 to 3:00 -> 60 mins -> INTRADAY_1H_TO_4H
+    # t2: 9:00 to 10:00 -> 60 mins -> INTRADAY_1H_TO_4H
+    # t3: 14:00 to 15:30 -> 90 mins -> INTRADAY_1H_TO_4H
+    # t4: 17:00 to 17:03 -> 3 mins -> SCALP_UNDER_5M
+    sample_breakdown_trades[3].open_time = datetime(2024, 1, 4, 17, 0)
+    sample_breakdown_trades[3].close_time = datetime(2024, 1, 4, 17, 3)
+
+    results = BreakdownAnalyzer.analyze_by_duration(sample_breakdown_trades)
+    assert "SCALP_UNDER_5M" in results
+    assert "INTRADAY_5M_TO_1H" in results
+    assert "INTRADAY_1H_TO_4H" in results
+    assert "SESSION_4H_TO_1D" in results
+    assert "SWING_OVER_1D" in results
+    assert results["SCALP_UNDER_5M"].total_trades == 1
+    assert results["INTRADAY_1H_TO_4H"].total_trades == 3
 
 
 def test_analyze_by_strategy(sample_breakdown_trades):
