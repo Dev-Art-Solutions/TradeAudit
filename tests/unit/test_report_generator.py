@@ -197,12 +197,14 @@ def test_generate_summary_report(sample_trades, sample_account, sample_strategie
     assert "## 3. Four-Quadrant Execution Quality Analysis" in report
     assert "## 4. Behavioral & Discipline Intelligence" in report
     assert "## 5. Risk & Stop-Loss Discipline" in report
-    assert "## 10. Targeted AI Audit Questions" in report
+    assert "## 6. Quantitative Risk Research & Capital Preservation" in report
+    assert "## 10. Data Integrity & Known Limitations" in report
+    assert "## 11. Targeted AI Audit Questions" in report
     assert "## 🤖 Suggested System Prompt for AI Analysis" in report
 
     # Summary report should NOT include breakdowns or full ledger
-    assert "## 6. Multi-Dimensional Performance Breakdowns" not in report
-    assert "## 8. Complete Trade Ledger" not in report
+    assert "## 7. Multi-Dimensional Performance Breakdowns" not in report
+    assert "## 9. Complete Trade Ledger" not in report
 
 
 def test_generate_standard_report(sample_trades, sample_account, sample_strategies):
@@ -221,14 +223,15 @@ def test_generate_standard_report(sample_trades, sample_account, sample_strategi
 
     assert "export_type: Standard" in report
     assert "broker: 'MetaQuotes Ltd / MetaQuotes-Demo'" in report
-    assert "## 6. Multi-Dimensional Performance Breakdowns" in report
+    assert "## 7. Multi-Dimensional Performance Breakdowns" in report
     assert "### A. By Symbol" in report
     assert "### B. By Trade Direction" in report
     assert "### C. By Trading Session" in report
-    assert "## 7. Execution Deviations & Strategy Violations" in report
+    assert "### E. By Holding Duration Horizon" in report
+    assert "## 8. Execution Deviations & Strategy Violations" in report
     assert "MAX_RISK_PERCENT violated" in report
     # Full ledger should still NOT be present in Standard
-    assert "## 8. Complete Trade Ledger" not in report
+    assert "## 9. Complete Trade Ledger" not in report
 
 
 def test_generate_full_report(sample_trades, sample_account, sample_strategies):
@@ -247,7 +250,7 @@ def test_generate_full_report(sample_trades, sample_account, sample_strategies):
 
     assert "export_type: Full" in report
     assert "account: '1234567'" in report
-    assert "## 8. Complete Trade Ledger" in report
+    assert "## 9. Complete Trade Ledger" in report
     assert "#9001" in report
     assert "#9002" in report
     assert "#9003" in report
@@ -312,7 +315,7 @@ def test_build_ai_prompt_returns_targeted_questions_and_system_prompt(sample_tra
     generator = MarkdownReportGenerator(app_version="0.1.0")
     ai_prompt = generator.build_ai_prompt(sample_trades)
 
-    assert "## 10. Targeted AI Audit Questions" in ai_prompt
+    assert "## 11. Targeted AI Audit Questions" in ai_prompt
     assert "## 🤖 Suggested System Prompt for AI Analysis" in ai_prompt
     assert "You are an elite quantitative trading coach" in ai_prompt
     assert "Core Edge Diagnosis" in ai_prompt

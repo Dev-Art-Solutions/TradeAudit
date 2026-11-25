@@ -40,6 +40,8 @@ from tradeaudit.app.services.strategy_trader_comparator import StrategyTraderCom
 from tradeaudit.app.services.breakdown_analyzer import BreakdownAnalyzer, AdvancedBreakdownResults
 from tradeaudit.app.services.data_quality_analyzer import DataQualityAnalyzer, DataQualityReport
 from tradeaudit.app.services.audit_snapshot_service import AuditSnapshotService, AuditSnapshot
+from tradeaudit.app.services.quant_research_analyzer import QuantResearchAnalyzer
+from tradeaudit.domain.analytics import QuantResearchResult
 
 
 class MarkdownReportGenerator:
@@ -77,6 +79,12 @@ class MarkdownReportGenerator:
         breakdowns = BreakdownAnalyzer.analyze_all(closed_trades)
         quality = DataQualityAnalyzer.analyze(closed_trades)
         snapshot = AuditSnapshotService.build(closed_trades, self.app_version)
+        quant_result: Optional[QuantResearchResult] = None
+        if len(closed_trades) >= 3 and any(t.realized_r is not None for t in closed_trades):
+            try:
+                quant_result = QuantResearchAnalyzer().analyze_quant_research(closed_trades)
+            except Exception:
+                quant_result = None
 
         # 3. Assemble report sections
         sections: List[str] = []
@@ -104,6 +112,10 @@ class MarkdownReportGenerator:
 
         # Risk & Drawdown Discipline
         sections.append(self._build_risk_discipline_section(metrics, closed_trades))
+
+        # Quantitative Risk & Capital Preservation Section
+        if quant_result is not None:
+            sections.append(self._build_quant_section(quant_result))
 
         # Standard and Full depth sections
         if config.export_type in (ExportType.STANDARD, ExportType.FULL):
@@ -425,9 +437,52 @@ filters_applied:
 
         return "\n".join(lines)
 
+    def _build_quant_section(self, q: QuantResearchResult) -> str:
+        """Build institutional quantitative risk, tail risk, and capital preservation section."""
+        lines = [
+            "## 6. Quantitative Risk Research & Capital Preservation",
+            "",
+            "| Institutional Metric | Value | Description |",
+            "| :--- | :--- | :--- |",
+            f"| **Sharpe Ratio (R)** | `{q.sharpe_ratio_r:.2f}` | Mean R / StdDev R per trade |",
+            f"| **Sortino Ratio (R)** | `{q.sortino_ratio_r:.2f}` | Downside risk adjusted deviation |",
+            f"| **Calmar Ratio (R)** | `{q.calmar_ratio_r:.2f}` | Total Net R / Historical Max DD R |",
+            f"| **Historical VaR (95%)** | `{q.var_95_r:.2f}R` | 95% single-trade Value at Risk |",
+            f"| **Expected Shortfall (CVaR 95%)** | `{q.cvar_95_r:.2f}R` | Average tail loss beyond 95% VaR |",
+            f"| **Full Kelly Optimal Growth (f*)** | `{q.kelly_criterion_pct:.1f}%` | Theoretical optimal position sizing |",
+            f"| **Recommended Half-Kelly** | `{q.half_kelly_pct:.1f}%` | Institutional safe sizing allocation |"
+        ]
+
+        if q.ruin_matrix:
+            matrix = q.ruin_matrix
+            lines.extend([
+                "",
+                "### Risk of Ruin Sensitivity Matrix",
+                "",
+                f"**Capital Preservation Resilience Score**: `{matrix.capital_preservation_score:.0f}/100`  ",
+                f"**Recommended Optimal Risk Allocation**: `{matrix.optimal_risk_pct:.1f}%` per trade  ",
+                "",
+                "| Risk / Trade | 10% DD Ruin | 20% DD Ruin | 30% DD Ruin | 50% DD Ruin |",
+                "| :--- | :--- | :--- | :--- | :--- |"
+            ])
+            for r_pct in matrix.risk_per_trade_options:
+                row_cells = []
+                for dd_pct in matrix.drawdown_options:
+                    cell = next(
+                        (c for c in matrix.cells if abs(c.risk_per_trade_pct - r_pct) < 1e-4 and abs(c.drawdown_pct - dd_pct) < 1e-4),
+                        None
+                    )
+                    if cell:
+                        row_cells.append(f"{cell.ruin_probability:.1f}% ({cell.consecutive_losses_to_ruin} losses)")
+                    else:
+                        row_cells.append("—")
+                lines.append(f"| **{r_pct:.1f}%** | " + " | ".join(row_cells) + " |")
+
+        return "\n".join(lines)
+
     def _build_breakdown_sections(self, b: AdvancedBreakdownResults) -> str:
         lines = [
-            "## 6. Multi-Dimensional Performance Breakdowns",
+            "## 7. Multi-Dimensional Performance Breakdowns",
             "",
             "### A. By Symbol",
             "",
@@ -481,6 +536,45 @@ filters_applied:
                     f"| **{ctx}** | {cm.total_trades} | {cm.win_rate*100:.1f}% | ${cm.net_profit:,.2f} | {cm.net_r:+.2f}R | {cm.expectancy_r:+.2f}R |"
                 )
 
+        if getattr(b, "by_duration", None):
+            lines.extend([
+                "",
+                "### E. By Holding Duration Horizon",
+                "",
+                "| Holding Horizon | Trades | Win Rate | Net P/L ($) | Net R | Expectancy (R) | Profit Factor |",
+                "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
+            ])
+            dur_labels = {
+                "SCALP_UNDER_5M": "Scalp (< 5m)",
+                "INTRADAY_5M_TO_1H": "Intraday (5m - 1h)",
+                "INTRADAY_1H_TO_4H": "Intraday (1h - 4h)",
+                "SESSION_4H_TO_1D": "Session (4h - 24h)",
+                "SWING_OVER_1D": "Swing (> 24h)"
+            }
+            for dur_k, dur_m in b.by_duration.items():
+                if dur_m.total_trades > 0:
+                    lbl = dur_labels.get(dur_k, dur_k)
+                    pf = f"{dur_m.profit_factor:.2f}" if dur_m.profit_factor is not None else "N/A"
+                    lines.append(
+                        f"| **{lbl}** | {dur_m.total_trades} | {dur_m.win_rate*100:.1f}% | ${dur_m.net_profit:,.2f} | {dur_m.net_r:+.2f}R | {dur_m.expectancy_r:+.2f}R | {pf} |"
+                    )
+
+        if getattr(b, "by_strategy", None):
+            active_strats = {k: v for k, v in b.by_strategy.items() if v.total_trades > 0}
+            if active_strats:
+                lines.extend([
+                    "",
+                    "### F. By Strategy Assignment",
+                    "",
+                    "| Strategy | Trades | Win Rate | Net P/L ($) | Net R | Expectancy (R) | Profit Factor |",
+                    "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
+                ])
+                for s_name, s_m in active_strats.items():
+                    pf = f"{s_m.profit_factor:.2f}" if s_m.profit_factor is not None else "N/A"
+                    lines.append(
+                        f"| **{s_name}** | {s_m.total_trades} | {s_m.win_rate*100:.1f}% | ${s_m.net_profit:,.2f} | {s_m.net_r:+.2f}R | {s_m.expectancy_r:+.2f}R | {pf} |"
+                    )
+
         return "\n".join(lines)
 
     def _build_deviations_section(
@@ -495,7 +589,7 @@ filters_applied:
         ]
 
         lines = [
-            "## 7. Execution Deviations & Strategy Violations",
+            "## 8. Execution Deviations & Strategy Violations",
             "",
             f"**Total Rule Deviations**: `{len(dev_trades)} trades`"
         ]
@@ -534,7 +628,7 @@ filters_applied:
         privacy: PrivacyOptions
     ) -> str:
         lines = [
-            "## 8. Complete Trade Ledger",
+            "## 9. Complete Trade Ledger",
             "",
             f"**Total Positions Logged**: `{len(trades)}`",
             "",
@@ -578,7 +672,7 @@ filters_applied:
             limitations.append("- ✅ Dataset has adequate sample size (> 30 trades) and complete initial risk definitions.")
 
         lines = [
-            "## 9. Data Integrity & Known Limitations",
+            "## 10. Data Integrity & Known Limitations",
             ""
         ]
         lines.extend(limitations)
@@ -652,7 +746,7 @@ filters_applied:
         persona = PERSONAS.get(persona_key, PERSONAS["quant"])
 
         lines = [
-            f"## 10. Targeted AI Audit Questions ({persona['title']})",
+            f"## 11. Targeted AI Audit Questions ({persona['title']})",
             "",
             "Please paste this entire report into ChatGPT, Claude, or your LLM of choice, and ask:",
             ""

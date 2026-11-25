@@ -423,14 +423,14 @@ def test_report_endpoint_supports_export_types(client, existing_trade_id):
     summary_body = summary_res.json()
     assert summary_body["export_type"] == "Summary"
     assert "export_type: Summary" in summary_body["markdown"]
-    assert "## 6. Multi-Dimensional Performance Breakdowns" not in summary_body["markdown"]
+    assert "Multi-Dimensional Performance Breakdowns" not in summary_body["markdown"]
 
     full_res = client.get("/api/report?export_type=Full")
     assert full_res.status_code == 200
     full_body = full_res.json()
     assert full_body["export_type"] == "Full"
     assert "export_type: Full" in full_body["markdown"]
-    assert "## 8. Complete Trade Ledger" in full_body["markdown"]
+    assert "## 9. Complete Trade Ledger" in full_body["markdown"]
 
     fallback_res = client.get("/api/report?export_type=invalid_type")
     assert fallback_res.status_code == 200
@@ -442,7 +442,7 @@ def test_report_endpoint_supports_filters_privacy_and_ai_prompt(client, existing
     assert res.status_code == 200
     data = res.json()
     assert "ai_prompt" in data
-    assert "## 10. Targeted AI Audit Questions" in data["ai_prompt"]
+    assert "Targeted AI Audit Questions" in data["ai_prompt"]
     assert "You are an elite quantitative trading coach" in data["ai_prompt"]
     assert data["filters"]["symbol"] == "EURUSD"
     assert data["privacy"]["mask_account"] is False

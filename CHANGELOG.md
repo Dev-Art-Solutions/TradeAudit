@@ -4,6 +4,9 @@
 
 ### Added
 
+- Quantitative Risk Research & Capital Preservation section (Sharpe, Sortino, Calmar, VaR 95%, CVaR 95%, Kelly Criterion, and Risk of Ruin Sensitivity Matrix) integrated directly into generated Markdown audit reports and HTML dossiers.
+- Holding Duration Horizon (`by_duration`) and Strategy Assignment (`by_strategy`) breakdown tables integrated into Markdown and HTML export reports.
+
 - Multi-tier Holding Duration Breakdown dimension (`by_duration`) in `BreakdownAnalyzer` and Breakdowns view (`#breakdowns`) categorizing trades across Scalp (< 5m), Intraday (5m-1h, 1h-4h), Session (4h-24h), and Swing (> 24h) horizons with dedicated category filtering, win rates, expectancies, and an Optimal Holding Time hero insight card.
 
 - Risk of Ruin Sensitivity Matrix & Capital Preservation Table (`#quant-ror-matrix-card`) in Quant & Risk (`#quant`) simulating Brownian continuous diffusion ruin probabilities across varying position risk allocations (0.5% to 3.0%) and drawdown limits (10% to 50%), featuring consecutive loss buffers, Capital Preservation Resilience Score (`#quant-resilience-badge`), and optimal risk allocation recommendations.
