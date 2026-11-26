@@ -245,6 +245,7 @@ filters_applied:
             f"| **Profit Factor** | `{m.profit_factor if m.profit_factor is not None else 'N/A'}` | Ideal benchmark: > 1.50 |",
             f"| **Expectancy (R)** | `{m.expectancy_r:+.2f}R` / trade | Average expected R return per execution |",
             f"| **Expectancy ($)** | `${m.expectancy_monetary:+,.2f}` / trade | Average monetary expected return |",
+            f"| **System Quality Number (SQN)** | `{f'{m.sqn:.2f} ({m.sqn_rating})' if m.sqn is not None else 'N/A'}` | Van Tharp SQN statistical score |",
             f"| **Average Winner** | `{m.avg_win_r:+.2f}R` (${m.avg_win_monetary:,.2f}) | Win / Loss payoff ratio |",
             f"| **Average Loser** | `{m.avg_loss_r:+.2f}R` (${m.avg_loss_monetary:,.2f}) | Average risk realization |",
             f"| **Max Drawdown (R)** | `{m.max_drawdown_r:.2f}R` | Peak-to-trough drawdown in R |",

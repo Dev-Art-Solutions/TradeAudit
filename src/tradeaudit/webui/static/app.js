@@ -415,7 +415,7 @@ async function viewDashboard() {
       <div class="kpi"><div class="kpi-label">Win Rate</div><div class="kpi-value">${fmtPct(m.win_rate)}</div><div class="kpi-sub">${m.winning_trades}W / ${m.losing_trades}L / ${m.breakeven_trades}BE</div></div>
       <div class="kpi"><div class="kpi-label">Net Profit</div><div class="kpi-value ${m.net_profit >= 0 ? "win" : "loss"}">${fmtNum(m.net_profit)}</div><div class="kpi-sub">${m.total_trades} total trades</div></div>
       <div class="kpi"><div class="kpi-label">Expectancy (R)</div><div class="kpi-value ${m.expectancy_r >= 0 ? "win" : "loss"}">${fmtNum(m.expectancy_r, 3)}</div><div class="kpi-sub">${m.trades_with_r} trades with known R</div></div>
-      <div class="kpi"><div class="kpi-label">Profit Factor</div><div class="kpi-value">${m.profit_factor === null ? "\u221E" : fmtNum(m.profit_factor)}</div><div class="kpi-sub">Verdict: ${m.verdict.replace(/_/g, " ")}</div></div>
+      <div class="kpi"><div class="kpi-label">Profit Factor & SQN</div><div class="kpi-value">${m.profit_factor === null ? "\u221E" : fmtNum(m.profit_factor)}</div><div class="kpi-sub">${m.sqn !== null && m.sqn !== undefined ? `SQN: <b>${fmtNum(m.sqn, 2)}</b> (${m.sqn_rating || '—'})` : `Verdict: ${m.verdict.replace(/_/g, " ")}`}</div></div>
     </div>
     <div class="grid grid-3" style="margin-top:16px">
       <div class="card">

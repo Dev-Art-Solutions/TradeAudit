@@ -187,3 +187,42 @@ def test_reproducibility():
     res2 = PerformanceAnalyzer.analyze(trades)
 
     assert res1 == res2
+
+
+def test_sqn_calculation():
+    """Verify System Quality Number (SQN) calculation and ratings."""
+    # Under 5 trades with R -> SQN is None
+    small_sample = [
+        create_sample_trade(profit=100.0, realized_r=1.0, close_minutes_offset=1),
+        create_sample_trade(profit=100.0, realized_r=1.0, close_minutes_offset=2),
+    ]
+    m_small = PerformanceAnalyzer.analyze(small_sample)
+    assert m_small.sqn is None
+    assert m_small.sqn_rating is None
+
+    # Consistent winning trades -> positive SQN
+    good_trades = [
+        create_sample_trade(profit=120.0, realized_r=2.0, close_minutes_offset=1),
+        create_sample_trade(profit=150.0, realized_r=2.5, close_minutes_offset=2),
+        create_sample_trade(profit=100.0, realized_r=1.8, close_minutes_offset=3),
+        create_sample_trade(profit=130.0, realized_r=2.2, close_minutes_offset=4),
+        create_sample_trade(profit=140.0, realized_r=2.1, close_minutes_offset=5),
+        create_sample_trade(profit=110.0, realized_r=1.9, close_minutes_offset=6),
+    ]
+    m_good = PerformanceAnalyzer.analyze(good_trades)
+    assert m_good.sqn is not None
+    assert m_good.sqn >= 2.0
+    assert m_good.sqn_rating in ("Good", "Excellent", "Superb", "Holy Grail")
+
+    # Consistent losing trades -> negative SQN and Poor rating
+    bad_trades = [
+        create_sample_trade(profit=-100.0, realized_r=-1.0, close_minutes_offset=1),
+        create_sample_trade(profit=-120.0, realized_r=-1.2, close_minutes_offset=2),
+        create_sample_trade(profit=-50.0, realized_r=-0.8, close_minutes_offset=3),
+        create_sample_trade(profit=-80.0, realized_r=-0.9, close_minutes_offset=4),
+        create_sample_trade(profit=20.0, realized_r=0.2, close_minutes_offset=5),
+    ]
+    m_bad = PerformanceAnalyzer.analyze(bad_trades)
+    assert m_bad.sqn is not None
+    assert m_bad.sqn < 1.6
+    assert m_bad.sqn_rating == "Poor"

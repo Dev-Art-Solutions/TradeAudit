@@ -42,6 +42,8 @@ class PerformanceMetrics:
     max_drawdown_monetary: float = 0.0
     max_drawdown_duration_trades: int = 0
     max_drawdown_duration_days: float = 0.0
+    sqn: Optional[float] = None
+    sqn_rating: Optional[str] = None
     recovery_factor: Optional[float] = None
     avg_duration_minutes: Optional[float] = None
     median_duration_minutes: Optional[float] = None

@@ -4,6 +4,8 @@
 
 ### Added
 
+- System Quality Number (Van Tharp SQN) institutional edge diagnostic metric computing sample-normalized expectancies (\( \sqrt{N} \cdot \frac{\text{Mean } R}{\text{StdDev } R} \)) across trading history, classified into standard rating tiers (Poor, Average, Good, Excellent, Superb, Holy Grail), with real-time display in the Dashboard Profit Factor KPI card and inclusion in generated Markdown and HTML audit dossiers.
+
 - Drawdown Duration Horizon analytics (`max_drawdown_duration_trades` and `max_drawdown_duration_days`) in `PerformanceAnalyzer` and Dashboard KPI cards tracking the maximum number of consecutive trades and calendar days spent underwater before setting a new equity high.
 
 - Multi-format Filtered Trade History Export (CSV & JSON) supporting active client and server-side filtration by Symbol, Direction, Outcome, Strategy, and Compliance status with enriched trade metadata including holding duration, net profit, fees, and strategy naming.

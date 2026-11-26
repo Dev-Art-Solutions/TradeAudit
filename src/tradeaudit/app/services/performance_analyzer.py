@@ -4,6 +4,7 @@ Calculates statistical performance metrics, win/loss rates, R-multiples, expecta
 """
 
 from typing import List, Optional
+import math
 import statistics
 from datetime import datetime
 
@@ -168,6 +169,36 @@ class PerformanceAnalyzer:
 
         avg_r = round(net_r / trades_with_r, 4) if trades_with_r > 0 else 0.0
 
+        # System Quality Number (Van Tharp SQN = sqrt(N) * (Mean R / StdDev R))
+        sqn: Optional[float] = None
+        sqn_rating: Optional[str] = None
+        r_list = [t.realized_r for t in trades_with_r_list if t.realized_r is not None]
+        if len(r_list) >= 5:
+            mean_r = sum(r_list) / len(r_list)
+            try:
+                stdev_r = statistics.stdev(r_list)
+            except Exception:
+                stdev_r = 0.0
+
+            if stdev_r > 1e-6:
+                raw_sqn = math.sqrt(len(r_list)) * (mean_r / stdev_r)
+                sqn = round(raw_sqn, 2)
+                if sqn < 1.6:
+                    sqn_rating = "Poor"
+                elif sqn < 2.0:
+                    sqn_rating = "Average"
+                elif sqn < 3.0:
+                    sqn_rating = "Good"
+                elif sqn < 5.0:
+                    sqn_rating = "Excellent"
+                elif sqn < 7.0:
+                    sqn_rating = "Superb"
+                else:
+                    sqn_rating = "Holy Grail"
+            else:
+                sqn = round(math.sqrt(len(r_list)) * (1.0 if mean_r > 0 else -1.0), 2)
+                sqn_rating = "Good" if mean_r > 0 else "Poor"
+
         # Risk Percentage
         trades_with_risk = [t for t in closed_trades if t.risk_percentage is not None]
         avg_risk_percentage = (
@@ -224,6 +255,8 @@ class PerformanceAnalyzer:
             max_consecutive_losses=max_consecutive_losses,
             max_drawdown_duration_trades=max_dd_duration_trades,
             max_drawdown_duration_days=max_dd_duration_days,
+            sqn=sqn,
+            sqn_rating=sqn_rating,
             verdict=verdict,
             min_sample_size=min_sample_size,
             is_sample_sufficient=is_sample_sufficient,
