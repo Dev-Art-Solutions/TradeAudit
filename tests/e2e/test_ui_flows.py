@@ -588,6 +588,7 @@ def test_trades_inspection_drawer(page, live_server, seeded_trade):
     # Click on the trade row
     page.click(".clickable-row")
     page.wait_for_selector("#trade-drawer.active", timeout=10000)
+    page.wait_for_selector("#drawer-close-btn", timeout=10000)
 
     # Verify drawer content
     assert page.is_visible("#trade-drawer-panel")
@@ -666,6 +667,8 @@ def test_trades_quick_filter_pills(page, live_server, seeded_trade):
 
     # 1. Verify quick filter container and pills
     assert page.is_visible("#trades-quick-filters")
+    assert page.is_visible("#btn-export-csv")
+    assert page.is_visible("#btn-export-json")
     assert page.is_visible('[data-preset="ALL"]')
     assert page.is_visible('[data-preset="WIN"]')
     assert page.is_visible('[data-preset="LOSS"]')

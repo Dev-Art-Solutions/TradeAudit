@@ -5,6 +5,7 @@ service/domain/infrastructure layers - no business logic lives here.
 import base64
 import binascii
 import csv
+import json
 import re
 import io
 import logging
@@ -399,29 +400,60 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
         return [to_jsonable(t) for t in trades]
 
     @app.get("/api/trades/export-csv")
-    def export_trades_csv():
+    def export_trades_csv(
+        symbol: Optional[str] = Query(default=None),
+        direction: Optional[str] = Query(default=None),
+        outcome: Optional[str] = Query(default=None),
+        compliance: Optional[str] = Query(default=None),
+        strategy_id: Optional[int] = Query(default=None),
+    ):
         trades, _ = closed_trades()
+        # Apply filters if provided
+        filtered = trades
+        if symbol and symbol.strip().upper() != "ALL":
+            filtered = [t for t in filtered if t.symbol and t.symbol.upper() == symbol.strip().upper()]
+        if direction and direction.strip().upper() != "ALL":
+            filtered = [t for t in filtered if t.direction and t.direction.upper() == direction.strip().upper()]
+        if outcome and outcome.strip().upper() != "ALL":
+            out_up = outcome.strip().upper()
+            if out_up in ("WIN", "WINNERS"):
+                filtered = [t for t in filtered if t.net_profit > 0]
+            elif out_up in ("LOSS", "LOSERS"):
+                filtered = [t for t in filtered if t.net_profit < 0]
+            elif out_up in ("BE", "BREAKEVEN"):
+                filtered = [t for t in filtered if t.net_profit == 0]
+        if compliance and compliance.strip().upper() != "ALL":
+            filtered = [t for t in filtered if (t.compliance_status or "").upper() == compliance.strip().upper()]
+        if strategy_id is not None:
+            filtered = [t for t in filtered if t.strategy_id == strategy_id]
+
+        strats = {s.id: s.name for s in ctx.strategy_service.get_all_strategies() if s.id is not None}
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow([
             "ID", "Position ID", "Symbol", "Direction", "Volume",
-            "Open Time", "Close Time", "Open Price", "Close Price",
-            "Initial SL", "Initial TP", "Profit", "Swap", "Commission",
-            "Realized R", "Status", "Compliance Status", "Emotion Tag",
-            "Strategy ID", "Behavior Notes"
+            "Open Time", "Close Time", "Duration (min)", "Open Price", "Close Price",
+            "Initial SL", "Initial TP", "Gross Profit", "Swap", "Commission", "Fee",
+            "Net Profit", "Realized R", "Status", "Compliance Status", "Emotion Tag",
+            "Strategy ID", "Strategy Name", "Behavior Notes"
         ])
-        for t in trades:
+        for t in filtered:
+            dur_mins = round((t.close_time - t.open_time).total_seconds() / 60.0, 1) if (t.open_time and t.close_time and t.close_time >= t.open_time) else ""
+            strat_name = strats.get(t.strategy_id, "") if t.strategy_id is not None else ""
             writer.writerow([
                 t.id, t.position_id, t.symbol, t.direction, t.volume,
                 t.open_time.isoformat() if t.open_time else "",
                 t.close_time.isoformat() if t.close_time else "",
+                dur_mins,
                 t.open_price, t.close_price if t.close_price is not None else "",
                 t.initial_sl if t.initial_sl is not None else "",
                 t.initial_tp if t.initial_tp is not None else "",
-                t.profit, t.swap, t.commission,
+                t.profit, t.swap, t.commission, t.fee,
+                round(t.net_profit, 2),
                 t.realized_r if t.realized_r is not None else "",
                 t.status, t.compliance_status or "",
                 t.emotion_tag or "", t.strategy_id if t.strategy_id is not None else "",
+                strat_name,
                 t.behavior_notes or ""
             ])
         csv_data = output.getvalue()
@@ -430,6 +462,51 @@ def create_app(ctx: AppContext, api_token: Optional[str] = None) -> FastAPI:
             content=csv_data,
             media_type="text/csv",
             headers={"Content-Disposition": f'attachment; filename="tradeaudit_{login}_{datetime.now().strftime("%Y%m%d")}.csv"'}
+        )
+
+    @app.get("/api/trades/export-json")
+    def export_trades_json(
+        symbol: Optional[str] = Query(default=None),
+        direction: Optional[str] = Query(default=None),
+        outcome: Optional[str] = Query(default=None),
+        compliance: Optional[str] = Query(default=None),
+        strategy_id: Optional[int] = Query(default=None),
+    ):
+        trades, _ = closed_trades()
+        filtered = trades
+        if symbol and symbol.strip().upper() != "ALL":
+            filtered = [t for t in filtered if t.symbol and t.symbol.upper() == symbol.strip().upper()]
+        if direction and direction.strip().upper() != "ALL":
+            filtered = [t for t in filtered if t.direction and t.direction.upper() == direction.strip().upper()]
+        if outcome and outcome.strip().upper() != "ALL":
+            out_up = outcome.strip().upper()
+            if out_up in ("WIN", "WINNERS"):
+                filtered = [t for t in filtered if t.net_profit > 0]
+            elif out_up in ("LOSS", "LOSERS"):
+                filtered = [t for t in filtered if t.net_profit < 0]
+            elif out_up in ("BE", "BREAKEVEN"):
+                filtered = [t for t in filtered if t.net_profit == 0]
+        if compliance and compliance.strip().upper() != "ALL":
+            filtered = [t for t in filtered if (t.compliance_status or "").upper() == compliance.strip().upper()]
+        if strategy_id is not None:
+            filtered = [t for t in filtered if t.strategy_id == strategy_id]
+
+        strats = {s.id: s.name for s in ctx.strategy_service.get_all_strategies() if s.id is not None}
+        export_payload = []
+        for t in filtered:
+            item = to_jsonable(t)
+            item["net_profit"] = round(t.net_profit, 2)
+            item["strategy_name"] = strats.get(t.strategy_id, "") if t.strategy_id is not None else ""
+            if t.open_time and t.close_time and t.close_time >= t.open_time:
+                item["duration_minutes"] = round((t.close_time - t.open_time).total_seconds() / 60.0, 1)
+            export_payload.append(item)
+
+        json_str = json.dumps(export_payload, indent=2, default=str)
+        login = ctx.current_login() or "history"
+        return Response(
+            content=json_str,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="tradeaudit_{login}_{datetime.now().strftime("%Y%m%d")}.json"'}
         )
 
     @app.get("/api/trades/{trade_id}")

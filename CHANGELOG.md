@@ -4,6 +4,8 @@
 
 ### Added
 
+- Multi-format Filtered Trade History Export (CSV & JSON) supporting active client and server-side filtration by Symbol, Direction, Outcome, Strategy, and Compliance status with enriched trade metadata including holding duration, net profit, fees, and strategy naming.
+
 - Quantitative Risk Research & Capital Preservation section (Sharpe, Sortino, Calmar, VaR 95%, CVaR 95%, Kelly Criterion, and Risk of Ruin Sensitivity Matrix) integrated directly into generated Markdown audit reports and HTML dossiers.
 - Holding Duration Horizon (`by_duration`) and Strategy Assignment (`by_strategy`) breakdown tables integrated into Markdown and HTML export reports.
 

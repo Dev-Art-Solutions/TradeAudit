@@ -807,7 +807,8 @@ async function viewTrades() {
     <div class="toolbar">
       <div class="chip" id="trades-count-chip">Loading…</div>
       <div class="right">
-        <button class="btn" id="btn-export-csv" title="Export trade history to CSV">📥 Export CSV</button>
+        <button class="btn" id="btn-export-csv" title="Export trade history to CSV (honors active filters)">📥 Export CSV</button>
+        <button class="btn" id="btn-export-json" title="Export trade history to JSON (honors active filters)">📋 Export JSON</button>
         <button class="btn" id="btn-analyze-behavior" title="Run revenge trading, FOMO and overtrading detection">🧠 Analyze Behavior</button>
         <button class="btn btn-primary" id="btn-sync"><span id="sync-spinner"></span> Sync History</button>
       </div>
@@ -876,6 +877,7 @@ async function viewTrades() {
   `;
   document.getElementById("btn-sync").addEventListener("click", doSync);
   document.getElementById("btn-export-csv").addEventListener("click", doExportCsv);
+  document.getElementById("btn-export-json").addEventListener("click", doExportJson);
   document.getElementById("btn-analyze-behavior").addEventListener("click", doAnalyzeBehavior);
 
   const searchInput = document.getElementById("trades-search");
@@ -1389,9 +1391,31 @@ function renderTradesTable() {
   }
 }
 
+function buildTradesExportQuery() {
+  const params = new URLSearchParams();
+  if (state.tradeFilter.symbol && state.tradeFilter.symbol !== "ALL") {
+    params.set("symbol", state.tradeFilter.symbol);
+  }
+  if (state.tradeFilter.direction && state.tradeFilter.direction !== "ALL") {
+    params.set("direction", state.tradeFilter.direction);
+  }
+  if (state.tradeFilter.outcome && state.tradeFilter.outcome !== "ALL") {
+    params.set("outcome", state.tradeFilter.outcome);
+  }
+  if (state.tradeFilter.compliance && state.tradeFilter.compliance !== "ALL") {
+    params.set("compliance", state.tradeFilter.compliance);
+  }
+  if (state.tradeFilter.strategy && state.tradeFilter.strategy !== "ALL") {
+    params.set("strategy_id", state.tradeFilter.strategy);
+  }
+  return params.toString();
+}
+
 async function doExportCsv() {
   try {
-    const res = await fetch("/api/trades/export-csv", {
+    const qs = buildTradesExportQuery();
+    const endpoint = `/api/trades/export-csv${qs ? `?${qs}` : ""}`;
+    const res = await fetch(endpoint, {
       headers: { "X-TradeAudit-Token": window.__TA_TOKEN__ || "" },
     });
     if (!res.ok) throw new Error("Export failed: " + res.statusText);
@@ -1407,6 +1431,29 @@ async function doExportCsv() {
     showTransientBanner("\u2705 Trades exported to CSV successfully.", true);
   } catch (e) {
     showTransientBanner("Could not export CSV: " + e.message, false);
+  }
+}
+
+async function doExportJson() {
+  try {
+    const qs = buildTradesExportQuery();
+    const endpoint = `/api/trades/export-json${qs ? `?${qs}` : ""}`;
+    const res = await fetch(endpoint, {
+      headers: { "X-TradeAudit-Token": window.__TA_TOKEN__ || "" },
+    });
+    if (!res.ok) throw new Error("Export failed: " + res.statusText);
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tradeaudit_trades_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    showTransientBanner("📋 Trades exported to JSON successfully.", true);
+  } catch (e) {
+    showTransientBanner("Could not export JSON: " + e.message, false);
   }
 }
 

@@ -402,6 +402,30 @@ def test_assign_strategy_and_emotion_and_csv_export(client, existing_trade_id):
     assert csv_res.status_code == 200
     assert "text/csv" in csv_res.headers.get("content-type", "")
     assert "EURUSD" in csv_res.text
+    assert "TrendFollowing" in csv_res.text
+    assert "Net Profit" in csv_res.text
+
+    # Test filtered CSV export
+    filtered_csv_res = client.get("/api/trades/export-csv?symbol=EURUSD&direction=BUY")
+    assert filtered_csv_res.status_code == 200
+    assert "EURUSD" in filtered_csv_res.text
+
+    # Test JSON export endpoint
+    json_res = client.get("/api/trades/export-json")
+    assert json_res.status_code == 200
+    assert "application/json" in json_res.headers.get("content-type", "")
+    export_data = json_res.json()
+    assert isinstance(export_data, list)
+    assert len(export_data) >= 1
+    trade_item = next((item for item in export_data if item["symbol"] == "EURUSD"), None)
+    assert trade_item is not None
+    assert trade_item["strategy_name"] == "TrendFollowing"
+    assert "net_profit" in trade_item
+
+    # Test filtered JSON export with non-matching filter
+    empty_json_res = client.get("/api/trades/export-json?symbol=NONEXISTENT")
+    assert empty_json_res.status_code == 200
+    assert empty_json_res.json() == []
 
 
 def test_report_endpoint_returns_markdown_with_evidence_and_data_quality(client, existing_trade_id):
