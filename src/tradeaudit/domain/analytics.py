@@ -40,6 +40,8 @@ class PerformanceMetrics:
     expectancy_monetary: float = 0.0
     max_drawdown_r: float = 0.0
     max_drawdown_monetary: float = 0.0
+    max_drawdown_duration_trades: int = 0
+    max_drawdown_duration_days: float = 0.0
     recovery_factor: Optional[float] = None
     avg_duration_minutes: Optional[float] = None
     median_duration_minutes: Optional[float] = None

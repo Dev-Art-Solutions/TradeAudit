@@ -434,7 +434,9 @@ async function viewDashboard() {
     <div class="grid grid-4" style="margin-top:16px">
       <div class="card"><div class="card-title">Max Drawdown</div>
         <div class="kpi-value loss">${fmtNum(m.max_drawdown_r, 2)} R</div>
-        <div class="kpi-sub">${fmtNum(m.max_drawdown_monetary)} monetary</div></div>
+        <div class="kpi-sub">${fmtNum(m.max_drawdown_monetary)} monetary</div>
+        <div class="kpi-sub" style="margin-top:8px">Max DD Horizon: <b>${m.max_drawdown_duration_trades || 0} trades</b> · ${m.max_drawdown_duration_days !== undefined ? m.max_drawdown_duration_days + 'd' : '—'}</div>
+      </div>
       <div class="card"><div class="card-title">Recovery / Duration</div>
         <div class="kpi-value">${m.recovery_factor === null ? "N/A" : fmtNum(m.recovery_factor, 2)}</div>
         <div class="kpi-sub">Recovery factor</div>

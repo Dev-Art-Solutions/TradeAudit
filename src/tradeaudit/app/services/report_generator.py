@@ -248,6 +248,7 @@ filters_applied:
             f"| **Average Winner** | `{m.avg_win_r:+.2f}R` (${m.avg_win_monetary:,.2f}) | Win / Loss payoff ratio |",
             f"| **Average Loser** | `{m.avg_loss_r:+.2f}R` (${m.avg_loss_monetary:,.2f}) | Average risk realization |",
             f"| **Max Drawdown (R)** | `{m.max_drawdown_r:.2f}R` | Peak-to-trough drawdown in R |",
+            f"| **Max Drawdown Duration** | `{m.max_drawdown_duration_trades} trades` ({m.max_drawdown_duration_days:.1f}d) | Peak-to-recovery horizon |",
             f"| **Max Drawdown ($)** | `${m.max_drawdown_monetary:,.2f}` | Peak-to-trough monetary drawdown |",
             f"| **Recovery Factor** | `{m.recovery_factor if m.recovery_factor is not None else 'N/A'}` | Net profit / absolute maximum monetary drawdown |",
             f"| **Trade Duration** | `{m.avg_duration_minutes if m.avg_duration_minutes is not None else 'N/A'} min avg` | {m.trades_with_duration}/{m.total_trades} closed trades have valid timestamps |",

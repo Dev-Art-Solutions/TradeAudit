@@ -4,6 +4,8 @@
 
 ### Added
 
+- Drawdown Duration Horizon analytics (`max_drawdown_duration_trades` and `max_drawdown_duration_days`) in `PerformanceAnalyzer` and Dashboard KPI cards tracking the maximum number of consecutive trades and calendar days spent underwater before setting a new equity high.
+
 - Multi-format Filtered Trade History Export (CSV & JSON) supporting active client and server-side filtration by Symbol, Direction, Outcome, Strategy, and Compliance status with enriched trade metadata including holding duration, net profit, fees, and strategy naming.
 
 - Quantitative Risk Research & Capital Preservation section (Sharpe, Sortino, Calmar, VaR 95%, CVaR 95%, Kelly Criterion, and Risk of Ruin Sensitivity Matrix) integrated directly into generated Markdown audit reports and HTML dossiers.

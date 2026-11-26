@@ -102,13 +102,32 @@ class PerformanceAnalyzer:
         peak_r = 0.0
         max_drawdown_r = 0.0
 
+        # Drawdown duration tracking (in trades and days)
+        max_dd_duration_trades = 0
+        curr_dd_duration_trades = 0
+        max_dd_duration_days = 0.0
+        peak_time: Optional[datetime] = None
+
         for t in closed_trades:
             curr_monetary += t.net_profit
             cum_mon_rounded = round(curr_monetary, 2)
             cumulative_monetary_series.append(cum_mon_rounded)
 
-            if cum_mon_rounded > peak_monetary:
+            time_ref = t.close_time or t.open_time
+
+            if cum_mon_rounded >= peak_monetary:
                 peak_monetary = cum_mon_rounded
+                peak_time = time_ref
+                curr_dd_duration_trades = 0
+            else:
+                curr_dd_duration_trades += 1
+                if curr_dd_duration_trades > max_dd_duration_trades:
+                    max_dd_duration_trades = curr_dd_duration_trades
+                if peak_time and time_ref and time_ref >= peak_time:
+                    diff_days = (time_ref - peak_time).total_seconds() / 86400.0
+                    if diff_days > max_dd_duration_days:
+                        max_dd_duration_days = round(diff_days, 1)
+
             dd_mon = peak_monetary - cum_mon_rounded
             if dd_mon > max_drawdown_monetary:
                 max_drawdown_monetary = dd_mon
@@ -203,6 +222,8 @@ class PerformanceAnalyzer:
             trades_with_duration=len(durations),
             max_consecutive_wins=max_consecutive_wins,
             max_consecutive_losses=max_consecutive_losses,
+            max_drawdown_duration_trades=max_dd_duration_trades,
+            max_drawdown_duration_days=max_dd_duration_days,
             verdict=verdict,
             min_sample_size=min_sample_size,
             is_sample_sufficient=is_sample_sufficient,

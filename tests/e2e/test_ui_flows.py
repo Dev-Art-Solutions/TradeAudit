@@ -22,6 +22,7 @@ def test_seeded_dashboard_has_portfolio_snapshot_and_accessible_nav(page, live_s
     assert page.text_content("#dashboard-heading") == "Performance at a glance"
     assert page.is_visible(".verdict-card")
     assert page.is_visible(".quality-card")
+    assert page.is_visible("text=Max DD Horizon")
     assert page.get_attribute('.quality-row:first-child [role="progressbar"]', "aria-valuemax") == "100"
     assert page.is_visible(".evidence-strip")
     assert page.is_enabled("#btn-export-snapshot")

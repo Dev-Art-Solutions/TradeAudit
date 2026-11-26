@@ -104,6 +104,8 @@ def test_drawdown_curve_r_and_monetary():
     assert metrics.cumulative_monetary_series == [100.0, -50.0, 0.0, -100.0]
     assert metrics.max_drawdown_monetary == 200.0
     assert metrics.recovery_factor == -0.5
+    assert metrics.max_drawdown_duration_trades == 3
+    assert metrics.max_drawdown_duration_days >= 0.0
 
     assert metrics.cumulative_r_series == [2.0, -1.0, 0.0, -2.0]
     assert metrics.drawdown_r_series == [0.0, 3.0, 2.0, 4.0]
