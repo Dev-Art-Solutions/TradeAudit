@@ -2959,6 +2959,10 @@ const BREAKDOWN_DIM_LABELS = {
   INTRADAY_1H_TO_4H: "🕐 Intraday (1h - 4h)",
   SESSION_4H_TO_1D: "📅 Session (4h - 24h)",
   SWING_OVER_1D: "🌊 Swing (> 24h)",
+  COMPLIANT: "🎯 Fully Compliant",
+  PARTIAL: "⚠️ Partial Compliance",
+  DEVIATION: "❌ Rule Violation / Deviation",
+  UNCHECKED: "⚪ Unchecked / Discretionary",
 };
 
 function formatBreakdownKey(key) {
@@ -3048,6 +3052,17 @@ function drawHourlyBarChart(canvas, hourlyData) {
 
 function renderBreakdownInsights(b) {
   const insights = [];
+
+  if (b.by_compliance && b.by_compliance.COMPLIANT && b.by_compliance.COMPLIANT.total_trades > 0) {
+    const comp = b.by_compliance.COMPLIANT;
+    insights.push(`
+      <div class="bd-insight-card">
+        <div class="bd-insight-label">Compliant Discipline</div>
+        <div class="bd-insight-val">${fmtPct(comp.win_rate)} WR</div>
+        <div class="bd-insight-sub text-win">${fmtNum(comp.net_profit)} (${fmtNum(comp.expectancy_r, 2)}R · ${comp.total_trades} trades)</div>
+      </div>
+    `);
+  }
 
   if (b.by_duration) {
     const durEntries = Object.entries(b.by_duration).filter(([, m]) => m.total_trades > 0);
@@ -3306,6 +3321,7 @@ async function viewBreakdowns() {
         <button class="btn btn-sm bd-filter-btn active" data-bd-cat="all">All Dimensions</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="instrument">Symbol & Direction</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="strategy">Strategies</button>
+        <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="compliance">Rule Compliance</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="duration">Holding Duration</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="time">Time & Sessions</button>
         <button class="btn btn-sm btn-subtle bd-filter-btn" data-bd-cat="sequence">Sequence & Streaks</button>
@@ -3321,6 +3337,10 @@ async function viewBreakdowns() {
 
       <div class="bd-group cat-strategy">
         ${breakdownTable("By Assigned Strategy", b.by_strategy)}
+      </div>
+
+      <div class="bd-group cat-compliance">
+        ${breakdownTable("By Strategy Compliance Status (Rules Adherence)", b.by_compliance, "cat-compliance-card")}
       </div>
 
       <div class="bd-group cat-duration">

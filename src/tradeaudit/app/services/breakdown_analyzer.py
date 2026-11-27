@@ -33,6 +33,7 @@ class AdvancedBreakdownResults:
     by_emotion: Dict[str, PerformanceMetrics] = field(default_factory=dict)
     by_strategy: Dict[str, PerformanceMetrics] = field(default_factory=dict)
     by_duration: Dict[str, PerformanceMetrics] = field(default_factory=dict)
+    by_compliance: Dict[str, PerformanceMetrics] = field(default_factory=dict)
 
 
 class BreakdownAnalyzer:
@@ -294,6 +295,26 @@ class BreakdownAnalyzer:
 
         return {bucket: PerformanceAnalyzer.analyze(duration_map[bucket]) for bucket in cls.DURATION_BUCKETS}
 
+    COMPLIANCE_STATUSES = ["COMPLIANT", "DEVIATION", "PARTIAL", "UNCHECKED"]
+
+    @classmethod
+    def analyze_by_compliance(cls, trades: List[Trade]) -> Dict[str, PerformanceMetrics]:
+        """Group closed trades by strategy compliance status and compute performance metrics."""
+        compliance_map: Dict[str, List[Trade]] = {cat: [] for cat in cls.COMPLIANCE_STATUSES}
+        closed_trades = [t for t in trades if t.status and t.status.upper() == "CLOSED"]
+
+        for t in closed_trades:
+            status = (t.compliance_status or "UNCHECKED").upper().strip()
+            if status not in compliance_map:
+                compliance_map[status] = []
+            compliance_map[status].append(t)
+
+        return {
+            k: PerformanceAnalyzer.analyze(compliance_map[k])
+            for k in cls.COMPLIANCE_STATUSES
+            if len(compliance_map[k]) > 0 or k in ("COMPLIANT", "DEVIATION")
+        }
+
     @classmethod
     def analyze_all(
         cls, trades: List[Trade], strategies: Optional[Dict[int, str]] = None
@@ -309,5 +330,6 @@ class BreakdownAnalyzer:
             by_streak=cls.analyze_by_streak(trades),
             by_emotion=cls.analyze_by_emotion(trades),
             by_strategy=cls.analyze_by_strategy(trades, strategies=strategies),
-            by_duration=cls.analyze_by_duration(trades)
+            by_duration=cls.analyze_by_duration(trades),
+            by_compliance=cls.analyze_by_compliance(trades)
         )

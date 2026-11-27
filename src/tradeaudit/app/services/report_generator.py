@@ -577,6 +577,29 @@ filters_applied:
                         f"| **{s_name}** | {s_m.total_trades} | {s_m.win_rate*100:.1f}% | ${s_m.net_profit:,.2f} | {s_m.net_r:+.2f}R | {s_m.expectancy_r:+.2f}R | {pf} |"
                     )
 
+        if getattr(b, "by_compliance", None):
+            active_comp = {k: v for k, v in b.by_compliance.items() if v.total_trades > 0}
+            if active_comp:
+                lines.extend([
+                    "",
+                    "### G. By Strategy Compliance Status",
+                    "",
+                    "| Compliance Status | Trades | Win Rate | Net P/L ($) | Net R | Expectancy (R) | Profit Factor |",
+                    "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
+                ])
+                comp_labels = {
+                    "COMPLIANT": "🎯 Fully Compliant",
+                    "PARTIAL": "⚠️ Partial Compliance",
+                    "DEVIATION": "❌ Rule Violation / Deviation",
+                    "UNCHECKED": "⚪ Unchecked / Discretionary"
+                }
+                for c_k, c_m in active_comp.items():
+                    pf = f"{c_m.profit_factor:.2f}" if c_m.profit_factor is not None else "N/A"
+                    lbl = comp_labels.get(c_k, c_k)
+                    lines.append(
+                        f"| **{lbl}** | {c_m.total_trades} | {c_m.win_rate*100:.1f}% | ${c_m.net_profit:,.2f} | {c_m.net_r:+.2f}R | {c_m.expectancy_r:+.2f}R | {pf} |"
+                    )
+
         return "\n".join(lines)
 
     def _build_deviations_section(

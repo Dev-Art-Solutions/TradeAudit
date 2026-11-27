@@ -228,6 +228,7 @@ def test_generate_standard_report(sample_trades, sample_account, sample_strategi
     assert "### B. By Trade Direction" in report
     assert "### C. By Trading Session" in report
     assert "### E. By Holding Duration Horizon" in report
+    assert "### G. By Strategy Compliance Status" in report
     assert "## 8. Execution Deviations & Strategy Violations" in report
     assert "MAX_RISK_PERCENT violated" in report
     # Full ledger should still NOT be present in Standard

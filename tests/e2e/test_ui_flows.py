@@ -411,6 +411,11 @@ def test_breakdowns_view_dimensions_and_hourly_chart(page, live_server, seeded_t
     page.wait_for_selector(".cat-strategy", timeout=5000)
     assert page.is_visible("text=By Assigned Strategy")
 
+    # Filter to Rule Compliance category
+    page.click('[data-bd-cat="compliance"]')
+    page.wait_for_selector(".cat-compliance", timeout=5000)
+    assert page.is_visible("text=By Strategy Compliance Status")
+
     # Filter to Holding Duration category
     page.click('[data-bd-cat="duration"]')
     page.wait_for_selector(".cat-duration", timeout=5000)

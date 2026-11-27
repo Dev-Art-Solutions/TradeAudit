@@ -4,6 +4,8 @@
 
 ### Added
 
+- Multi-dimensional Strategy Compliance Status Breakdown (`by_compliance`) in `BreakdownAnalyzer`, Breakdowns View (`#breakdowns`), and generated Audit Reports (`_build_breakdown_sections`), analyzing performance differences (win rate, net profit, R expectancy, profit factor) between Fully Compliant, Deviation / Rule Violations, Partial Compliance, and Unchecked trades, along with dedicated navigation category filtering and a Compliant Discipline insight card.
+
 - System Quality Number (Van Tharp SQN) institutional edge diagnostic metric computing sample-normalized expectancies (\( \sqrt{N} \cdot \frac{\text{Mean } R}{\text{StdDev } R} \)) across trading history, classified into standard rating tiers (Poor, Average, Good, Excellent, Superb, Holy Grail), with real-time display in the Dashboard Profit Factor KPI card and inclusion in generated Markdown and HTML audit dossiers.
 
 - Drawdown Duration Horizon analytics (`max_drawdown_duration_trades` and `max_drawdown_duration_days`) in `PerformanceAnalyzer` and Dashboard KPI cards tracking the maximum number of consecutive trades and calendar days spent underwater before setting a new equity high.

@@ -162,6 +162,24 @@ def test_analyze_all(sample_breakdown_trades):
     assert len(all_res.by_weekday) == 7
     assert len(all_res.by_hour) == 24
     assert len(all_res.by_duration) == 5
+    assert len(all_res.by_compliance) >= 2
+
+
+def test_analyze_by_compliance(sample_breakdown_trades):
+    sample_breakdown_trades[0].compliance_status = "COMPLIANT"
+    sample_breakdown_trades[1].compliance_status = "DEVIATION"
+    sample_breakdown_trades[2].compliance_status = "COMPLIANT"
+    sample_breakdown_trades[3].compliance_status = "UNCHECKED"
+
+    results = BreakdownAnalyzer.analyze_by_compliance(sample_breakdown_trades)
+    assert "COMPLIANT" in results
+    assert "DEVIATION" in results
+    assert "UNCHECKED" in results
+    assert results["COMPLIANT"].total_trades == 2
+    assert results["COMPLIANT"].winning_trades == 2
+    assert results["DEVIATION"].total_trades == 1
+    assert results["DEVIATION"].winning_trades == 0
+    assert results["UNCHECKED"].total_trades == 1
 
 
 def test_analyze_by_duration(sample_breakdown_trades):

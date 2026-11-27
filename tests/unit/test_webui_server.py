@@ -553,6 +553,7 @@ def test_breakdown_endpoint_returns_all_eight_dimensions_with_seeded_trades(clie
     assert "by_context" in b
     assert "by_streak" in b
     assert "by_emotion" in b
+    assert "by_compliance" in b
 
     assert "EURUSD" in b["by_symbol"]
     assert b["by_symbol"]["EURUSD"]["total_trades"] >= 1
