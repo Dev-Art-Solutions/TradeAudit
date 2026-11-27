@@ -2707,7 +2707,7 @@ async function viewStrategyVsTrader() {
           ${fmtNum(q.bad_losses_profit)}
         </div>
         <div class="kpi-sub">
-          ${q.bad_losses_count} unforced error trades (${fmtNum(q.bad_losses_net_r, 2)} R)
+          ${q.bad_losses_count} unforced error trades (${fmtNum(q.bad_losses_net_r, 2)} R) · <b>${c.bad_loss_drag_pct || 0}% of all losses</b>
         </div>
       </div>
 

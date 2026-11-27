@@ -52,6 +52,8 @@ class StrategyTraderComparator:
                 no_bad_losses_profit=0.0,
                 discipline_alpha_r=0.0,
                 discipline_alpha_monetary=0.0,
+                rule_adherence_rate=0.0,
+                bad_loss_drag_pct=0.0,
             )
 
         # Categorize trade subsets
@@ -199,6 +201,12 @@ class StrategyTraderComparator:
         discipline_alpha_r = round(no_bad_losses_net_r - (total_perf.net_r or 0.0), 4)
         discipline_alpha_monetary = round(no_bad_losses_profit - (total_perf.net_profit or 0.0), 2)
 
+        assigned_total = len(compliant_trades) + len(deviation_trades)
+        rule_adherence_rate = round((len(compliant_trades) / assigned_total) * 100.0, 1) if assigned_total > 0 else 0.0
+
+        total_gross_loss_abs = abs(total_perf.gross_loss) if total_perf.gross_loss else 0.0
+        bad_loss_drag_pct = round((abs(quadrants.bad_losses_profit) / total_gross_loss_abs) * 100.0, 1) if total_gross_loss_abs > 0.0 else 0.0
+
         return StrategyVsTraderComparison(
             total_performance=total_perf,
             compliant_performance=compliant_perf,
@@ -215,4 +223,6 @@ class StrategyTraderComparator:
             no_bad_losses_profit=no_bad_losses_profit,
             discipline_alpha_r=discipline_alpha_r,
             discipline_alpha_monetary=discipline_alpha_monetary,
+            rule_adherence_rate=rule_adherence_rate,
+            bad_loss_drag_pct=bad_loss_drag_pct,
         )

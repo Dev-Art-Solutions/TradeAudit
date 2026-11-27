@@ -4,6 +4,8 @@
 
 ### Added
 
+- Avoidable Bad Loss Drag Percentage (`bad_loss_drag_pct`) and Overall Process Adherence Rate (`rule_adherence_rate`) metrics in `StrategyTraderComparator`, Strategy vs. Trader execution view (`#strategy-vs-trader`), and Four-Quadrant report generation (`_build_four_quadrant_section`), quantifying the exact percentage of gross loss capital wasted on unforced rule deviations.
+
 - Multi-dimensional Strategy Compliance Status Breakdown (`by_compliance`) in `BreakdownAnalyzer`, Breakdowns View (`#breakdowns`), and generated Audit Reports (`_build_breakdown_sections`), analyzing performance differences (win rate, net profit, R expectancy, profit factor) between Fully Compliant, Deviation / Rule Violations, Partial Compliance, and Unchecked trades, along with dedicated navigation category filtering and a Compliant Discipline insight card.
 
 - System Quality Number (Van Tharp SQN) institutional edge diagnostic metric computing sample-normalized expectancies (\( \sqrt{N} \cdot \frac{\text{Mean } R}{\text{StdDev } R} \)) across trading history, classified into standard rating tiers (Poor, Average, Good, Excellent, Superb, Holy Grail), with real-time display in the Dashboard Profit Factor KPI card and inclusion in generated Markdown and HTML audit dossiers.

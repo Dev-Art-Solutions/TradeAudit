@@ -622,6 +622,8 @@ def test_strategy_vs_trader_endpoint_with_seeded_trades(client, existing_trade_i
     assert "no_bad_losses_cumulative_r_series" in data
     assert data["discipline_alpha_r"] == 1.0
     assert data["discipline_alpha_monetary"] == 100.0
+    assert "rule_adherence_rate" in data
+    assert "bad_loss_drag_pct" in data
 
 
 

@@ -96,6 +96,8 @@ class StrategyVsTraderComparison:
     no_bad_losses_profit: float = 0.0
     discipline_alpha_r: float = 0.0
     discipline_alpha_monetary: float = 0.0
+    rule_adherence_rate: float = 0.0
+    bad_loss_drag_pct: float = 0.0
 
 
 @dataclass

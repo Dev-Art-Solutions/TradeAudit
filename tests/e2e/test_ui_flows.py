@@ -434,6 +434,7 @@ def test_strategy_vs_trader_matrix_and_scatter_canvas(page, live_server, seeded_
     # Hero strip and diagnostics
     assert page.is_visible(".svt-hero-strip")
     assert page.is_visible(".svt-verdict-card")
+    assert page.is_visible("text=of all losses")
 
     # Four-quadrant matrix cards
     assert page.locator(".svt-quadrant-card").count() == 4

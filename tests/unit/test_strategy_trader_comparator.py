@@ -17,6 +17,8 @@ def test_empty_trades_list():
     assert comparison.deviation_performance.total_trades == 0
     assert comparison.emotional_performance.total_trades == 0
     assert comparison.deviation_cost_r == 0.0
+    assert comparison.rule_adherence_rate == 0.0
+    assert comparison.bad_loss_drag_pct == 0.0
 
 
 def test_strategy_vs_trader_comparison_subsets():
@@ -95,6 +97,8 @@ def test_strategy_vs_trader_comparison_subsets():
     assert comparison.no_bad_losses_profit == 200.0
     assert comparison.discipline_alpha_r == 2.0
     assert comparison.discipline_alpha_monetary == 200.0
+    assert comparison.rule_adherence_rate == 50.0
+    assert comparison.bad_loss_drag_pct == 66.7
 
 
 
@@ -112,6 +116,8 @@ def test_high_discipline_verdict():
     ]
     comparison = StrategyTraderComparator.compare(trades)
     assert comparison.deviation_cost_r == 0.0
+    assert comparison.rule_adherence_rate == 100.0
+    assert comparison.bad_loss_drag_pct == 0.0
     assert comparison.quality_verdict == "HIGH_DISCIPLINE"
 
 
@@ -133,6 +139,8 @@ def test_no_strategy_assigned_does_not_fabricate_deviation_cost():
     ]
     comparison = StrategyTraderComparator.compare(trades)
     assert comparison.deviation_cost_r == 0.0
+    assert comparison.rule_adherence_rate == 0.0
+    assert comparison.bad_loss_drag_pct == 0.0
     assert comparison.deviation_cost_monetary == 0.0
     assert comparison.quality_verdict == "NO_STRATEGY_ASSIGNED"
 
